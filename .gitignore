@@ -1,0 +1,41 @@
+# --- Data & corpus (NEVER commit third-party article text — AGENTS.md §3) ---
+*.db
+*.sqlite
+*.sqlite3
+01_data/
+# Ignore everything under data/ at any depth, except the golden set
+# (our own questions/annotations — safe to commit; never article bodies).
+data/**
+!data/golden/
+!data/golden/**
+cache/
+*.html.gz
+*.parquet
+embeddings/
+indexes/
+
+# --- Legacy notebooks (local reference only — extract logic, don't publish) ---
+# The old thesis notebooks stay on disk to port scraper logic from, but the new
+# package supersedes them; they are not part of the portfolio repo.
+notebooks/legacy/
+
+# --- Secrets ---
+.env
+.env.local
+
+# --- Python / uv ---
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,24 @@
+[project]
+name = "newsrag"
+version = "0.1.0"
+description = "Evaluation-first RAG over public news (football domain; retargetable)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "ftfy>=6.3.1",
+    "httpx>=0.28.1",
+    "pandas>=3.0.3",
+    "pyyaml>=6.0.3",
+    "trafilatura>=2.1.0",
+]
+
+[project.scripts]
+corpus = "newsrag.corpus.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/newsrag"]

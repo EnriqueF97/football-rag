@@ -1,0 +1,45 @@
+# GDELT ingest configuration — football/soccer news.
+#
+# THE DOMAIN LIVES HERE. To retarget the whole project (F1, cybersecurity, ...) you
+# edit this one file — no code changes. `queries` is the search net; `date_range` and
+# `gdelt` control the window and politeness.
+#
+# GDELT note: multiple words in a query are matched with AND (all must appear). So
+# "football transfer" = articles containing both words. Competition names (Premier
+# League, La Liga, ...) are strong anchors on their own; topic queries are anchored
+# with "football"/"soccer" to avoid pulling in other sports and US-football noise.
+# Edit freely — you are the domain expert here.
+
+date_range:
+  start: "2024-08-01" # ~start of the 2024-25 season
+  end: "2026-06-30" # ~end of the 2025-26 season
+
+gdelt:
+  max_records: 250 # GDELT caps a single request at 250 articles
+  sleep_seconds: 12 # cooldown between requests (rate-limit politeness)
+  language: "English" # keep only this GDELT language
+
+queries:
+  # --- Competitions (strong, unambiguous anchors) ---
+  - "Premier League"
+  - "Eredivisie"
+  - "La Liga"
+  - "Serie A"
+  - "Bundesliga"
+  - "Ligue 1"
+  - "Champions League"
+
+  # --- Text-native topics (the RAG-valuable stories) ---
+  - "football transfer"
+  - "transfer rumour football"
+  - "football manager sacked"
+  - "football coach appointed"
+  - "football injury"
+  - "football takeover"
+  - "soccer transfer" # US sources say "soccer"; catches ESPN etc.
+
+
+  # --- Optional: uncomment to bias the corpus toward specific saga-heavy clubs ---
+  # - "Real Madrid"
+  # - "Manchester United"
+  # - "Barcelona football"
