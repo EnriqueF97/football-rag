@@ -58,6 +58,30 @@ def _fetch(args: argparse.Namespace) -> int:
     return 0
 
 
+def _extract(args: argparse.Namespace) -> int:
+    """Extract full clean bodies from the cached HTML."""
+    from newsrag.corpus import extract
+
+    extract.extract(config_path=args.config, reextract=args.reextract)
+    return 0
+
+
+def _dedup(args: argparse.Namespace) -> int:
+    """Mark near-duplicate articles, pointing dup_of at the canonical one."""
+    from newsrag.corpus import dedup
+
+    dedup.dedup(threshold=args.threshold)
+    return 0
+
+
+def _stats(args: argparse.Namespace) -> int:
+    """Print the corpus health report (read-only)."""
+    from newsrag.corpus import stats
+
+    stats.stats()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="corpus",
@@ -99,17 +123,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--reextract", action="store_true",
         help="re-run extraction on already-extracted articles",
     )
-    p_extract.set_defaults(func=_not_implemented("Phase 1.4"))
+    p_extract.add_argument(
+        "--config", default="config/football_queries.yaml",
+        help="config YAML holding the `validity:` rules",
+    )
+    p_extract.set_defaults(func=_extract)
 
     p_dedup = sub.add_parser("dedup", help="detect and mark near-duplicate articles")
     p_dedup.add_argument(
-        "--threshold", type=float, default=0.8,
-        help="MinHash Jaccard similarity cutoff, 0..1 (default: 0.8)",
+        "--threshold", type=float, default=0.75,
+        help="MinHash Jaccard similarity cutoff, 0..1 (default: 0.75)",
     )
-    p_dedup.set_defaults(func=_not_implemented("Phase 1.5"))
+    p_dedup.set_defaults(func=_dedup)
 
     p_stats = sub.add_parser("stats", help="print a corpus health summary")
-    p_stats.set_defaults(func=_not_implemented("Phase 1.6"))
+    p_stats.set_defaults(func=_stats)
 
     return parser
 

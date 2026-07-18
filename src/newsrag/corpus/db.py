@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS articles (
     language          TEXT,
     body_full         TEXT,                   -- NULL until extracted (resume contract)
     body_valid        INTEGER,                -- 0/1 from is_valid_body
+    invalid_reason    TEXT,                   -- why body_valid=0: too_short|spam_phrase|off_topic
     content_hash      TEXT,                   -- hash of normalized body: exact-dup anchor
     dup_of            INTEGER REFERENCES articles(id),  -- canonical id if near-duplicate
     extractor_version TEXT,                   -- which extractor produced body_full
@@ -86,6 +87,16 @@ def connect(path: str | Path) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_column(conn, table: str, column: str, decl: str) -> None:
+    """Add a column if it's missing. SQLite has no `ADD COLUMN IF NOT EXISTS`.
+
+    Lets the schema evolve without forcing a rebuild of an existing corpus DB.
+    """
+    existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def init_corpus(path: str | Path = DEFAULT_DB_PATH) -> Path:
     """Create the corpus DB (articles + chunks) if it does not exist. Idempotent."""
     path = Path(path)
@@ -93,6 +104,8 @@ def init_corpus(path: str | Path = DEFAULT_DB_PATH) -> Path:
     conn = connect(path)
     try:
         conn.executescript(CORPUS_SCHEMA)
+        # Migrations for DBs created before a column existed.
+        _ensure_column(conn, "articles", "invalid_reason", "TEXT")
         conn.commit()
     finally:
         conn.close()

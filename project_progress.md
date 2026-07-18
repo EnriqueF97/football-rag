@@ -16,12 +16,12 @@
 
 ---
 
-## Overall completion: **12%**
+## Overall completion: **20%**
 
 | # | Phase | Weight | Local % | Status |
 |---|-------|:------:|:-------:|--------|
 | 0 | Project scaffolding | 5% | 100% | ✅ done |
-| 1 | Corpus construction (fix + harden the scraper) | 15% | ~50% | 🔨 in progress |
+| 1 | Corpus construction (fix + harden the scraper) | 15% | 100% | ✅ done (code) |
 | 2 | Golden evaluation set | 20% | 0% | not started |
 | 3 | Retrieval core (chunk · embed · index · hybrid) | 15% | 0% | not started |
 | 4 | Generation + citations | 8% | 0% | not started |
@@ -36,7 +36,7 @@
 
 ---
 
-## Phase 0 — Project scaffolding · weight 5% · **0%**
+## Phase 0 — Project scaffolding · weight 5% · **100%** ✅
 
 *Goal: a clean, reproducible Python project managed with `uv`, with git history from
 commit one. This is the part a reader inspects first.*
@@ -82,7 +82,7 @@ targets. No data committed yet.
 
 ---
 
-## Phase 1 — Corpus construction · weight 15% · **~50%** (1.1, 1.2, 1.3 done)
+## Phase 1 — Corpus construction · weight 15% · **100%** ✅ *(code complete; awaiting the full pipeline run on real data)*
 
 *Goal: turn the legacy scraper (built to grab a 3-paragraph lede for a sentiment
 score) into an ingest that produces **full, clean, de-duplicated article bodies** —
@@ -109,6 +109,14 @@ See `README.md` for why each of these is load-bearing for evaluation, not polish
       (DB-level; re-run appends only new). Smoke-tested: 100 fetched → 8 new.
 - [x] **1.2.3** Query list + date range + rate-limit in `config/football_queries.yaml`
       — the domain knob. No code change to retarget.
+- [x] **1.2.4** **Source allowlist** (`sources:` in the same config): only reputable
+      football-journalism domains enter the corpus. GDELT indexes everything — the first
+      smoke run returned a TV guide and two Nigerian aggregators syndicating one story.
+      Suffix + www-insensitive matching (`bbc.co.uk` admits `sport.bbc.co.uk`, but
+      `notbbc.co.uk` is correctly rejected). Rejections are tallied per domain and
+      printed, so we keep visibility into what is excluded. *Deliberately not narrowed
+      to one source — multiple outlets covering the same saga IS the conflicting-sources
+      material the evaluation needs.*
 
 ### 1.3 Fetch layer (`fetch.py`) — *the unblocker* — ✅ *done*
 - [x] **1.3.1** `httpx` async fetch with a **per-domain** semaphore (default 3) + a
@@ -122,24 +130,47 @@ See `README.md` for why each of these is load-bearing for evaluation, not polish
 - [x] **1.3.4** Resume-capable: skips already-cached URLs. Verified on 8 rows
       (5 ok · 2 blocked 403 · 1 transient 500 that correctly retries).
 
-### 1.4 Extraction (`extract.py`) — *the correctness fix* — *~1 day*
-- [ ] **1.4.1** Replace `soup.find_all('p')[:3]` with `trafilatura` full-body extract
-      (boilerplate removal, date/author, sane fallback)
-- [ ] **1.4.2** Replace the latin-1↔utf-8 mojibake hack with `ftfy.fix_text()`
-- [ ] **1.4.3** Keep + tune `is_valid_body` (length, keyword, press-release, caps)
-- [ ] **1.4.4** Extraction runs off the HTML cache, so re-extracting with new rules
-      costs seconds — extractor quality is itself an ablation knob
+### 1.4 Extraction (`extract.py`) — *the correctness fix* — ✅ *done*
+- [x] **1.4.1** `trafilatura` full-body extract replaces `soup.find_all('p')[:3]`.
+      Only HTTP 200 is extracted — a cached 403 block page is not an article.
+- [x] **1.4.2** `ftfy.fix_text()` replaces the latin-1↔utf-8 mojibake hack.
+- [x] **1.4.3** `is_valid_body` returns *(valid, reason)* so failures are tallied by
+      cause (`too_short` / `spam_phrase` / `off_topic`). Rules live in the
+      `validity:` section of `config/football_queries.yaml` — a knob, not hardcoded.
+- [x] **1.4.4** Runs off the HTML cache, so `--reextract` costs seconds and never
+      re-downloads. `EXTRACTOR_VERSION` is stamped per row → extractor quality is an
+      ablation knob. Verified: 5/5 cached 200s extracted and valid (780–7,748 chars).
 
-### 1.5 Near-duplicate detection (`dedup.py`) — *NEW, evaluation-critical* — *~1 day*
-- [ ] **1.5.1** Shingle + MinHash (or SimHash) over bodies
-- [ ] **1.5.2** Cluster near-dups (syndicated wire copies across domains)
-- [ ] **1.5.3** Elect one canonical per cluster; mark the rest `dup_of`
-- [ ] **1.5.4** Report cluster-size distribution — a corpus-health number for the README
+### 1.5 Near-duplicate detection (`dedup.py`) — *NEW, evaluation-critical* — ✅ *done*
+- [x] **1.5.1** 5-word shingles + MinHash (128 perms) over bodies (`datasketch`).
+- [x] **1.5.2** LSH for candidate pairs (O(n) not O(n²)), then **connected components**
+      via union-find to turn pairs into clusters.
+- [x] **1.5.3** Canonical elected deterministically — valid → longest → earliest →
+      lowest id — and the rest marked `dup_of`. Nothing is deleted; re-running with a
+      new `--threshold` recomputes from scratch.
+- [x] **1.5.4** Reports cluster count, largest cluster, and canonical count; warns when
+      the largest cluster ≥20 (a sign of transitive chaining / too-low threshold).
+- **Empirical finding:** LSH's threshold is an S-curve, not a hard cutoff. Our known
+  syndicated pair (same Salah story on `dailypost.ng` / `nigerianeye.com`, different
+  `content_hash`) estimates at Jaccard **0.80** and was **missed at threshold 0.80**,
+  caught at 0.75/0.70/0.60. Default lowered to **0.75**. Canonical rule verified: the
+  870-char copy won over the 780-char one. *Tuned on 5 articles — re-validate on the
+  full corpus.*
 
-### 1.6 Corpus stats & sanity (`cli.py stats`) — *~0.5 day*
-- [ ] **1.6.1** Counts: total / with-body / valid / unique-after-dedup
-- [ ] **1.6.2** Coverage over time (histogram by month) — check for gaps/spikes
-- [ ] **1.6.3** Domain distribution — spot over-representation
+### 1.6 Corpus stats & sanity (`stats.py`) — ✅ *done*
+- [x] **1.6.1** **Pipeline funnel** with counts + % at every stage (ingested → cached →
+      extracted → valid → canonical), plus a `LOSSES` block that names *where* articles
+      were lost. A single "N articles" number hides all of it.
+- [x] **1.6.2** Coverage by month (inline histogram) — gaps break time-filtered retrieval.
+- [x] **1.6.3** Domain distribution with a >40% over-representation warning — this is
+      what validates the source allowlist on real data.
+- [x] **1.6.4** Also: fetch outcomes by HTTP status (block rate), duplicate-cluster count
+      and largest size (validates the dedup threshold), and body-length distribution.
+- [x] **1.6.5** **Readiness gate** — a PASS/FAIL checklist answering "is this corpus good
+      enough to build the golden set on?" A golden set annotated over a broken corpus is
+      wasted work, and it's the most expensive artifact in the project.
+- [x] **1.6.6** Persisted `invalid_reason` (new column + idempotent migration in
+      `db.py::_ensure_column`) so losses can be explained after the run, not just during it.
 
 **Done when:** `make ingest && make fetch && make extract && make dedup` rebuilds the
 corpus from scratch, every valid article has a full clean body, near-dups are marked,

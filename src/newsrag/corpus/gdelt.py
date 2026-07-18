@@ -16,6 +16,7 @@ date range one week at a time per query to stay under that cap and under rate li
 from __future__ import annotations
 
 import time
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -37,6 +38,33 @@ _USER_AGENT = (
 def load_config(path: str | Path = DEFAULT_CONFIG) -> dict:
     with open(Path(path)) as f:
         return yaml.safe_load(f)
+
+
+def _normalize_domain(domain: str | None) -> str:
+    d = (domain or "").strip().lower()
+    return d[4:] if d.startswith("www.") else d
+
+
+def domain_allowed(domain: str | None, allowlist: set[str] | None) -> bool:
+    """Suffix- and www-insensitive allowlist check.
+
+    ``bbc.co.uk`` in the list also admits ``sport.bbc.co.uk``. A ``None`` or empty
+    allowlist means "allow everything" (the filter is disabled).
+    """
+    if not allowlist:
+        return True
+    d = _normalize_domain(domain)
+    if not d:
+        return False
+    return any(d == allowed or d.endswith("." + allowed) for allowed in allowlist)
+
+
+def load_allowlist(cfg: dict) -> set[str] | None:
+    """Read `sources:` from the config. Returns None when the filter is disabled."""
+    sources = cfg.get("sources") or {}
+    if not sources.get("enabled", False):
+        return None
+    return {_normalize_domain(d) for d in (sources.get("allowlist") or [])} or None
 
 
 def search_gdelt(
@@ -97,17 +125,31 @@ def _parse_seendate(seendate: str) -> str | None:
         return None
 
 
-def _insert(conn, articles: list[dict], language: str | None) -> int:
-    """Insert new metadata rows; returns how many were actually added (dedup by url)."""
+def _insert(
+    conn,
+    articles: list[dict],
+    language: str | None,
+    allowlist: set[str] | None = None,
+) -> tuple[int, Counter]:
+    """Insert new metadata rows (dedup by url, filtered by allowlist).
+
+    Returns (rows_added, rejected_domain_counter) — the rejections are reported so we
+    keep visibility into what the allowlist is excluding.
+    """
     to_add = []
+    rejected: Counter = Counter()
     for a in articles:
         if language and a.get("language") != language:
             continue
         url = a.get("url")
         if not url:
             continue
+        domain = a.get("domain")
+        if not domain_allowed(domain, allowlist):
+            rejected[_normalize_domain(domain)] += 1
+            continue
         to_add.append(
-            (a.get("title"), url, a.get("domain"), _parse_seendate(a.get("seendate")),
+            (a.get("title"), url, domain, _parse_seendate(a.get("seendate")),
              a.get("language"))
         )
     before = conn.total_changes
@@ -117,7 +159,7 @@ def _insert(conn, articles: list[dict], language: str | None) -> int:
         to_add,
     )
     conn.commit()
-    return conn.total_changes - before
+    return conn.total_changes - before, rejected
 
 
 def ingest(
@@ -133,10 +175,14 @@ def ingest(
     sleep_seconds = float(g.get("sleep_seconds", 12))
     language = g.get("language", "English")
     queries = cfg["queries"]
+    allowlist = load_allowlist(cfg)
+    if allowlist:
+        print(f"source allowlist: {len(allowlist)} domains")
 
     db.init_corpus(db_path)  # ensure the schema exists
     conn = db.connect(db_path)
     total_new = 0
+    all_rejected: Counter = Counter()
     try:
         with httpx.Client(headers={"User-Agent": _USER_AGENT}) as client:
             for query in queries:
@@ -144,10 +190,17 @@ def ingest(
                 rows = download_range(
                     client, query, start, end, max_records, sleep_seconds
                 )
-                added = _insert(conn, rows, language)
+                added, rejected = _insert(conn, rows, language, allowlist)
+                all_rejected.update(rejected)
                 total_new += added
-                print(f"  {len(rows)} fetched, {added} new")
+                print(f"  {len(rows)} fetched, {added} new, {sum(rejected.values())} off-allowlist")
     finally:
         conn.close()
+
     print(f"Done. {total_new} new articles added.")
+    if all_rejected:
+        print(f"rejected {sum(all_rejected.values())} articles from "
+              f"{len(all_rejected)} off-allowlist domains. Top 10:")
+        for domain, count in all_rejected.most_common(10):
+            print(f"  {count:>5}  {domain}")
     return total_new

@@ -161,11 +161,20 @@ Equivalent module form, if you prefer: `uv run python -m newsrag.corpus.cli ...`
 | Subcommand | Does | Key options |
 |------------|------|-------------|
 | `init` | create the two SQLite DBs (corpus + HTML cache), schema only — **works today**, idempotent | — |
-| `ingest` | fetch GDELT headlines into the DB (metadata only) — **works today** | `--config <path>` (default `config/football_queries.yaml`) |
+| `ingest` | fetch GDELT headlines into the DB (metadata only), filtered by the source allowlist — **works today** | `--config <path>` (default `config/football_queries.yaml`) |
 | `fetch` | download HTML → cache (async, robots-aware) — **works today** | `--per-domain <N>` (def 3) · `--max-concurrency <N>` (def 15) · `--no-robots` · `--limit <N>` |
-| `extract` | extract bodies from cached HTML | `--reextract` (re-run on already-extracted) |
-| `dedup` | detect + mark near-duplicates | `--threshold <0..1>` (MinHash similarity cutoff) |
-| `stats` | print corpus health summary | — |
+| `extract` | cached HTML → full clean bodies — **works today** | `--reextract` (re-run on already-extracted) · `--config <path>` |
+| `dedup` | detect + mark near-duplicates (`dup_of` → canonical) — **works today** | `--threshold <0..1>` (default 0.75) |
+| `stats` | corpus health report + readiness gate for Phase 2 — **works today**, read-only, no network | — |
+
+**The config file** (`config/football_queries.yaml`) holds three knobs, all editable
+without touching code:
+- `queries` + `date_range` + `gdelt` — what to search for and how politely (`ingest`).
+- `sources` — the domain allowlist; `enabled: false` ingests everything (`ingest`).
+- `validity` — body length / keyword / spam rules (`extract`).
+
+> **GDELT rate limits are real:** `sleep_seconds: 12` is the default for a reason. A
+> short sleep earns `429 Too Many Requests` and the whole sweep returns nothing.
 
 **Value notes:**
 - `--per-domain <N>` — simultaneous requests **per domain** (default 3). Small is
@@ -173,8 +182,11 @@ Equivalent module form, if you prefer: `uv run python -m newsrag.corpus.cli ...`
   global cap across all domains (default 15). `--no-robots` disables robots.txt
   (conscious override); `--limit <N>` fetches at most N articles (for testing).
 - `--threshold <0..1>` — MinHash Jaccard similarity above which two articles count as
-  near-duplicates. Higher = stricter (only near-identical copies collapse). Typical
-  ~0.8. Lower risks merging genuinely different articles.
+  near-duplicates (default **0.75**). Higher = stricter (only near-identical copies
+  collapse); lower risks merging genuinely different articles. **Careful:** LSH's
+  threshold is an S-curve, not a hard cutoff — a pair sitting *at* the threshold is
+  ~50/50 to be detected, so set it *below* the similarity you mean to catch. (Our known
+  syndicated pair estimates at 0.80 and was missed at 0.80, caught at 0.75.)
 - `--start` / `--end` — inclusive date bounds for the GDELT query window (`YYYY-MM-DD`).
 
 > These subcommands and flags are the **planned** interface; exact names may shift as

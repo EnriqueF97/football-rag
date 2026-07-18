@@ -38,8 +38,100 @@ queries:
   - "football takeover"
   - "soccer transfer" # US sources say "soccer"; catches ESPN etc.
 
-
   # --- Optional: uncomment to bias the corpus toward specific saga-heavy clubs ---
   # - "Real Madrid"
   # - "Manchester United"
   # - "Barcelona football"
+
+# --- Source allowlist (used by gdelt.py at ingest) -----------------------------------
+# Only these domains enter the corpus. GDELT indexes ALL news, which means general-news
+# aggregators that merely republish wire copy (and outright off-topic noise — a TV guide
+# turned up in the very first smoke run). Restricting to real football journalism raises
+# corpus quality and cuts the syndication problem at its source.
+#
+# It does NOT replace dedup: several outlets covering the same transfer saga is exactly
+# the conflicting-sources material this project needs — we just want them to be good
+# outlets. Never narrow this to a single source; that would kill the sagas.
+#
+# Matching is suffix-based and www-insensitive: `bbc.co.uk` also matches
+# `sport.bbc.co.uk`. Set `enabled: false` to ingest everything — useful for one run, to
+# see the real domain distribution via `corpus stats` before curating this list.
+#
+# Hard-paywalled sites (The Athletic, The Times) are deliberately absent: they yield
+# paywall stubs, not bodies. Edit freely — you are the domain expert.
+sources:
+  enabled: true
+  allowlist:
+    # --- UK football desks ---
+    - bbc.com
+    - bbc.co.uk
+    - theguardian.com
+    - skysports.com
+    - independent.co.uk
+    - mirror.co.uk
+    - standard.co.uk
+    - football365.com
+    - fourfourtwo.com
+    - 90min.com
+    - givemesport.com
+    - thisisanfield.com
+    # --- Global ---
+    - espn.com
+    - espn.co.uk
+    - goal.com
+    - eurosport.com
+    - si.com
+    - cbssports.com
+    # --- Continental Europe (English editions) ---
+    - marca.com
+    - as.com
+    - football-italia.net
+    - bundesliga.com
+    # --- Official ---
+    - premierleague.com
+    - uefa.com
+    - fifa.com
+
+# --- Body validity filter (used by extract.py) --------------------------------------
+# Decides whether an extracted body is a usable football article or junk (nav chrome,
+# paywall stub, block page, off-topic GDELT noise like a TV listing). Tune freely.
+validity:
+  min_chars: 400 # shorter than this is a stub, not an article
+  min_keyword_hits: 2 # how many DISTINCT keywords below must appear (2 avoids a passing mention)
+
+  # Football signal. A real match report / transfer story hits several of these.
+  keywords:
+    - football
+    - soccer
+    - club
+    - league
+    - match
+    - goal
+    - player
+    - squad
+    - manager
+    - coach
+    - transfer
+    - signing
+    - striker
+    - midfielder
+    - defender
+    - goalkeeper
+    - season
+    - fixture
+    - injury
+    - contract
+    - stadium
+    - penalty
+    - substitute
+    - sacked
+
+  # High-precision markers of a NON-article page. Kept short on purpose: an
+  # over-eager list silently drops good articles, which is worse than a little noise.
+  spam_phrases:
+    - "enable javascript"
+    - "accept all cookies"
+    - "subscribe to continue"
+    - "your browser is not supported"
+    - "access denied"
+    - "are you a robot"
