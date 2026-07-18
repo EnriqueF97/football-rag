@@ -1,35 +1,16 @@
-# Evaluation-First RAG over Energy News
+# Evaluation-First RAG over Football News
 
-> A retrieval-augmented QA system over a public corpus of energy/commodity news —
+> A retrieval-augmented QA system over a public corpus of football/soccer news —
 > built to be **measured, not demoed**. The deliverable is not "a RAG repo." The
 > deliverable is a rigorous evaluation harness that can say **which half of the system
 > works, by how much, and at what cost.**
+>
+> The domain is a **configuration knob** (the GDELT query list), so the same machinery
+> retargets to F1, cybersecurity, or anything else without touching the core.
 
 📄 The live build plan, with per-phase completion, lives in
 [`project_progress.md`](project_progress.md). This README is the *why* and the *what*;
 that file is the *where we are*.
-
----
-
-## The thesis in one paragraph
-
-The noise floor for RAG portfolio projects is enormous: ingest a PDF, drop it in a
-vector store, call an LLM, teach the reader nothing — because no hard decision was ever
-made inside. This project makes the hard decision the whole point. Almost no RAG project
-has an **evaluation** story: a held-out golden set, retrieval and generation scored
-separately, an LLM judge that was itself validated against human annotation, and cost
-/ latency reported per configuration. That gap is the opportunity, and evaluation rigor
-is the entire thesis. **Whenever "more features" fights "more rigorous evaluation,"
-evaluation wins.**
-
-## Why energy news, and why not a PDF
-
-A temporally-structured corpus enables what a static document cannot: time-filtered
-retrieval, conflicting versions of a developing story, facts that expire. That is where
-the interesting failures live — and it is also what exposes the **memorization trap**:
-a model can answer a question correctly *from its own weights* while the retrieval
-underneath is broken. A news corpus with timestamps lets us build memory-proof
-questions and catch that failure. A PDF hides it.
 
 ---
 
@@ -107,35 +88,17 @@ Python** — that is the part being judged as engineering.
 
 ---
 
-## What "done" looks like
-
-The project is finished when this paragraph can be written **truthfully** from real
-numbers (AGENTS.md §8):
-
-> Hybrid retrieval + cross-encoder reranking improved recall@5 from X to Y on a
-> 150-question golden set, at Z× the latency and €N/1k queries. Semantic chunking did
-> not help, and here is our hypothesis for why. The system abstains correctly on P% of
-> unanswerable questions. Here is a case where it still fails.
-
-If that paragraph can't be written honestly, the project isn't done — regardless of how
-much code exists.
-
----
-
 ## Data provenance & copyright
 
-Reusing the author's own GDELT scraping machinery from a prior internship is cleared and
-settled — the ingest, the domain, and the signal approach transfer. Two rules hold
-regardless of who owns the scraper:
+**No third-party article text in git.** News bodies are the outlets' copyright — that
+doesn't change based on who wrote the scraper. The repo stores URLs, IDs, embeddings, and
+short snippets; the ingest scripts rebuild the corpus so a reader regenerates it
+themselves rather than us republishing anyone's content. The SQLite corpus DB and the
+HTML cache are `.gitignore`d.
 
-1. **No third-party article text in git.** News bodies are the outlets' copyright. The
-   repo stores URLs, IDs, embeddings, and short snippets; a script rebuilds the corpus
-   so a reader regenerates it themselves. The SQLite DB and HTML cache are `.gitignore`d.
-2. **Nothing employer-specific** — no internal signal definitions, client logic,
-   proprietary data, or credentials. We reuse the machinery, not the business.
-
-Sources are public and licensing-safe: **GDELT** (default), **EIA open data**,
-**CC-NEWS**, permissive **RSS**. Reuters/Bloomberg content is avoided.
+Sources are public and licensing-safe — mainstream football coverage indexed by **GDELT**
+(BBC Sport, ESPN, The Guardian, and similar). The fetcher honours each domain's
+`robots.txt` and caps concurrency per host.
 
 The one committed data artifact is `data/golden/` — our own questions and annotations,
 not anyone's article text.

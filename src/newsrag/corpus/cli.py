@@ -45,6 +45,19 @@ def _ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _fetch(args: argparse.Namespace) -> int:
+    """Download article HTML into the cache (async, robots-aware)."""
+    from newsrag.corpus import fetch
+
+    fetch.fetch(
+        per_domain=args.per_domain,
+        max_concurrency=args.max_concurrency,
+        respect_robots=not args.no_robots,
+        limit=args.limit,
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="corpus",
@@ -64,10 +77,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_fetch = sub.add_parser("fetch", help="download article HTML into the cache")
     p_fetch.add_argument(
-        "--concurrency", type=int, default=4,
-        help="max simultaneous requests PER DOMAIN (default: 4)",
+        "--per-domain", type=int, default=3,
+        help="max simultaneous requests PER DOMAIN (default: 3)",
     )
-    p_fetch.set_defaults(func=_not_implemented("Phase 1.3"))
+    p_fetch.add_argument(
+        "--max-concurrency", type=int, default=15,
+        help="global max simultaneous requests (default: 15)",
+    )
+    p_fetch.add_argument(
+        "--no-robots", action="store_true",
+        help="do NOT honour robots.txt (conscious override)",
+    )
+    p_fetch.add_argument(
+        "--limit", type=int, default=None,
+        help="fetch at most N articles (useful for testing)",
+    )
+    p_fetch.set_defaults(func=_fetch)
 
     p_extract = sub.add_parser("extract", help="extract full bodies from cached HTML")
     p_extract.add_argument(

@@ -162,14 +162,16 @@ Equivalent module form, if you prefer: `uv run python -m newsrag.corpus.cli ...`
 |------------|------|-------------|
 | `init` | create the two SQLite DBs (corpus + HTML cache), schema only — **works today**, idempotent | — |
 | `ingest` | fetch GDELT headlines into the DB (metadata only) — **works today** | `--config <path>` (default `config/football_queries.yaml`) |
-| `fetch` | download HTML for articles with no body | `--concurrency <N>` (per-domain cap) |
+| `fetch` | download HTML → cache (async, robots-aware) — **works today** | `--per-domain <N>` (def 3) · `--max-concurrency <N>` (def 15) · `--no-robots` · `--limit <N>` |
 | `extract` | extract bodies from cached HTML | `--reextract` (re-run on already-extracted) |
 | `dedup` | detect + mark near-duplicates | `--threshold <0..1>` (MinHash similarity cutoff) |
 | `stats` | print corpus health summary | — |
 
 **Value notes:**
-- `--concurrency <N>` — how many simultaneous requests **per domain**, not global.
-  Small (e.g. 2–4) is polite; too high gets you rate-limited or blocked.
+- `--per-domain <N>` — simultaneous requests **per domain** (default 3). Small is
+  polite; too high gets you rate-limited or blocked. `--max-concurrency <N>` is the
+  global cap across all domains (default 15). `--no-robots` disables robots.txt
+  (conscious override); `--limit <N>` fetches at most N articles (for testing).
 - `--threshold <0..1>` — MinHash Jaccard similarity above which two articles count as
   near-duplicates. Higher = stricter (only near-identical copies collapse). Typical
   ~0.8. Lower risks merging genuinely different articles.

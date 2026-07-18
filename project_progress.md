@@ -1,4 +1,4 @@
-# Project Progress — Evaluation-First RAG over Energy News
+# Project Progress — Evaluation-First RAG over Football News
 
 > Living document. It is the single source of truth for **what is done, what is next,
 > and why**. Update the checkboxes and the percentages as work lands. Do not delete
@@ -16,12 +16,12 @@
 
 ---
 
-## Overall completion: **10%**
+## Overall completion: **12%**
 
 | # | Phase | Weight | Local % | Status |
 |---|-------|:------:|:-------:|--------|
 | 0 | Project scaffolding | 5% | 100% | ✅ done |
-| 1 | Corpus construction (fix + harden the scraper) | 15% | ~33% | 🔨 in progress |
+| 1 | Corpus construction (fix + harden the scraper) | 15% | ~50% | 🔨 in progress |
 | 2 | Golden evaluation set | 20% | 0% | not started |
 | 3 | Retrieval core (chunk · embed · index · hybrid) | 15% | 0% | not started |
 | 4 | Generation + citations | 8% | 0% | not started |
@@ -82,7 +82,7 @@ targets. No data committed yet.
 
 ---
 
-## Phase 1 — Corpus construction · weight 15% · **~33%** (1.1, 1.2 done)
+## Phase 1 — Corpus construction · weight 15% · **~50%** (1.1, 1.2, 1.3 done)
 
 *Goal: turn the legacy scraper (built to grab a 3-paragraph lede for a sentiment
 score) into an ingest that produces **full, clean, de-duplicated article bodies** —
@@ -110,12 +110,17 @@ See `README.md` for why each of these is load-bearing for evaluation, not polish
 - [x] **1.2.3** Query list + date range + rate-limit in `config/football_queries.yaml`
       — the domain knob. No code change to retarget.
 
-### 1.3 Fetch layer (`fetch.py`) — *the unblocker* — *~1.5 days*
-- [ ] **1.3.1** `httpx` async fetch with a **per-domain** semaphore (politeness is
-      measured per host, not in aggregate)
-- [ ] **1.3.2** On-disk HTML cache — never hit a server twice for the same URL
-- [ ] **1.3.3** `robots.txt` check + respectful UA + backoff on 429/5xx
-- [ ] **1.3.4** Resume-capable; drops the ~1.5h sequential run to minutes
+### 1.3 Fetch layer (`fetch.py`) — *the unblocker* — ✅ *done*
+- [x] **1.3.1** `httpx` async fetch with a **per-domain** semaphore (default 3) + a
+      global cap (default 15). Courtesy is per host, not aggregate.
+- [x] **1.3.2** HTML cached gzip-compressed in `data/cache/html.sqlite` — never hit a
+      server twice for the same URL.
+- [x] **1.3.3** `robots.txt` honoured per domain (cached, lenient on failure) + browser
+      UA. Outcomes labelled by HTTP status; only 2xx + permanent 4xx are cached, so
+      transient (429/5xx) errors retry next run. *(Deferred nicety: explicit in-run
+      backoff/delay on 429 — currently relies on retry-next-run.)*
+- [x] **1.3.4** Resume-capable: skips already-cached URLs. Verified on 8 rows
+      (5 ok · 2 blocked 403 · 1 transient 500 that correctly retries).
 
 ### 1.4 Extraction (`extract.py`) — *the correctness fix* — *~1 day*
 - [ ] **1.4.1** Replace `soup.find_all('p')[:3]` with `trafilatura` full-body extract
