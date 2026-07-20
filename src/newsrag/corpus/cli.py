@@ -45,6 +45,14 @@ def _ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ingest_guardian(args: argparse.Namespace) -> int:
+    """Fetch Guardian articles (metadata + bodies) via the Open Platform API."""
+    from newsrag.corpus import guardian
+
+    guardian.ingest(config_path=args.config)
+    return 0
+
+
 def _fetch(args: argparse.Namespace) -> int:
     """Download article HTML into the cache (async, robots-aware)."""
     from newsrag.corpus import fetch
@@ -98,6 +106,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="query config YAML (default: config/football_queries.yaml)",
     )
     p_ingest.set_defaults(func=_ingest)
+
+    p_guardian = sub.add_parser(
+        "ingest-guardian", help="fetch Guardian articles (metadata + bodies) via its API"
+    )
+    p_guardian.add_argument(
+        "--config", default="config/football_queries.yaml",
+        help="config YAML (uses date_range and the guardian: section)",
+    )
+    p_guardian.set_defaults(func=_ingest_guardian)
 
     p_fetch = sub.add_parser("fetch", help="download article HTML into the cache")
     p_fetch.add_argument(

@@ -82,7 +82,25 @@ targets. No data committed yet.
 
 ---
 
-## Phase 1 — Corpus construction · weight 15% · **100%** ✅ *(code complete; awaiting the full pipeline run on real data)*
+## Phase 1 — Corpus construction · weight 15% · **100%** ✅ *(code complete; Guardian corpus is REAL — 10.3k full bodies. Source diversity pending: see 1.8)*
+
+> **SOURCE STRATEGY PIVOT (2026-07-19).** GDELT DOC 2.0 is **benched**: diagnosis showed
+> a persistent IP-level penalty state (429 on the first cold request; malformed requests
+> return 200, so the block gates search execution only; a 5-min fully-quiet gap did not
+> clear it; every attempt — including retries and browser tests — re-arms it). Decision:
+> do not depend on a de-ban. Replacement architecture, empirically verified via
+> Common Crawl CDX + robots.txt checks:
+>
+> | Tier | Source | Discovery | Bodies |
+> |------|--------|-----------|--------|
+> | Reliable anchor | **Guardian Open Platform API** (free key in `.env`) | API search | API `body` HTML → cache (done, 1.7) |
+> | Tabloid/rumour | **Common Crawl** (mirror, 90min, teamtalk, caughtoffside, fourfourtwo, thisisanfield… — all verified present with status-200 HTML; CC bypasses their Cloudflare 403s) | CC index | WARC byte-range (planned, 1.8) |
+> | Other reliable | BBC / Sky / ESPN — **absent from CC** (they block CCBot `Disallow: /`, as does the Guardian) | RSS / Media Cloud / BigQuery GKG if stats show gaps | direct fetch (works: BBC/Independent return 200) |
+>
+> Contradictory tabloid coverage is a *feature* (golden-set fuel: saga synthesis,
+> temporal resolution, source-reliability questions) — never "clean it away".
+> BigQuery (`gdelt-bq.gdeltv2.gkg_partitioned`, sandbox free tier) stays on the bench
+> as a discovery fallback.
 
 *Goal: turn the legacy scraper (built to grab a 3-paragraph lede for a sentiment
 score) into an ingest that produces **full, clean, de-duplicated article bodies** —
@@ -109,6 +127,38 @@ See `README.md` for why each of these is load-bearing for evaluation, not polish
       (DB-level; re-run appends only new). Smoke-tested: 100 fetched → 8 new.
 - [x] **1.2.3** Query list + date range + rate-limit in `config/football_queries.yaml`
       — the domain knob. No code change to retarget.
+- [x] **1.2.8** **Circuit breaker — stop digging.** Comparing against the legacy notebook
+      (`notebooks/legacy/03`) showed our request shape is *identical* — same endpoint,
+      params, User-Agent, weekly windows. The difference was the error path: the legacy
+      skipped a failed window and moved on; ours retried 3×, so a throttled window cost
+      **4 requests instead of 1**, amplifying the very load that caused the throttle.
+      Lesson: retry-with-backoff is right for a transient blip and actively harmful under
+      a *sustained* throttle. Now: 1 retry (not 3), and a `Throttled` breaker aborts the
+      run after 3 consecutive window failures. Verified: 6 requests before stopping where
+      the old design made 32. The ledger makes stopping free — the next run resumes.
+- [x] **1.2.7** **Ingest ledger — window-level resume.** GDELT rate-limits at the IP
+      level; a real run hit 429 on its *first* request and no in-run backoff could clear
+      it. The ingest was all-or-nothing, so every restart re-requested windows we already
+      had and tripped the limiter again. Now an `ingest_log(query, window_start,
+      window_end)` table records each completed window, articles are inserted and logged
+      **per window** (not per query), and a re-run skips what's done. Order is
+      insert-then-log so the worst case is one redundant re-fetch, never lost articles.
+      Verified: second run made **0 HTTP calls** and skipped all 4 windows. This turns
+      "one uninterrupted 5-hour run" into "run in bursts whenever, progress accumulates."
+- [x] **1.2.6** **Malformed-JSON repair.** GDELT DOC 2.0 sometimes emits invalid JSON —
+      a captured real case was an unescaped backslash inside an Arabic headline
+      (`الدوري 2024 \ 2025`). The original code caught `ValueError` and returned `[]`,
+      **silently discarding ~50 articles for that week**. Now `parse_articles()` repairs
+      invalid escapes + control characters (verified: legitimate `\"` escapes survive),
+      and a genuinely unparseable payload *raises* so the window is reported as a gap
+      rather than mistaken for a quiet news week. Same principle as 1.2.5, one layer down.
+- [x] **1.2.5** **429 backoff + visible gaps.** A real run hit GDELT throttling within
+      minutes. `search_gdelt` now retries 429/5xx with exponential backoff (honouring
+      `Retry-After`), and `download_range` *reports* any week-window it still loses
+      instead of swallowing it — a dropped window is a **week of missing articles**, and
+      a silent gap is indistinguishable from a quiet news week, which would corrupt
+      temporal coverage. Re-running retries the gaps (inserts are idempotent).
+      Default `sleep_seconds` raised 12 → 20. Verified with mocked 429s.
 - [x] **1.2.4** **Source allowlist** (`sources:` in the same config): only reputable
       football-journalism domains enter the corpus. GDELT indexes everything — the first
       smoke run returned a TV guide and two Nigerian aggregators syndicating one story.

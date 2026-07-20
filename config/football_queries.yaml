@@ -10,13 +10,28 @@
 # with "football"/"soccer" to avoid pulling in other sports and US-football noise.
 # Edit freely — you are the domain expert here.
 
+# PILOT WINDOW — one month, to calibrate the allowlist / dedup threshold / validity
+# rules on real data before committing to the full ~5h run. Widen to
+# start 2024-08-01 / end 2026-06-30 (two seasons) once the pilot's `corpus stats` looks
+# sane. Note: August is peak transfer-window season — good saga material.
 date_range:
-  start: "2024-08-01" # ~start of the 2024-25 season
-  end: "2026-06-30" # ~end of the 2025-26 season
+  start: "2024-08-01"
+  end: "2026-06-30"
+
+# Guardian Open Platform (guardian.py). The reliable-tier anchor: official API, full
+# bodies, legal. Set GUARDIAN_API_KEY in the environment (free key, 500 calls/day —
+# the whole two-season backfill fits in ~130 calls).
+guardian:
+  section: football
+  page_size: 50 # API max per call
+  sleep_seconds: 1 # free tier allows 1 request/second
 
 gdelt:
   max_records: 250 # GDELT caps a single request at 250 articles
-  sleep_seconds: 12 # cooldown between requests (rate-limit politeness)
+  # Cooldown between requests. GDELT throttled us at 12s (two 429s in the first minutes
+  # of a real run), so this is 20. The code now retries 429/5xx with exponential backoff,
+  # but a larger sleep avoids burning time in retries. Lower it at your own risk.
+  sleep_seconds: 20
   language: "English" # keep only this GDELT language
 
 queries:

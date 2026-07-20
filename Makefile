@@ -2,12 +2,13 @@
 # Targets that route through `corpus` fail loudly (NotImplementedError) until their
 # Phase 1 logic lands; the rest echo their plan phase. See project_progress.md.
 
-.PHONY: help init ingest fetch extract dedup stats chunk index eval ablations
+.PHONY: help init ingest ingest-guardian fetch extract dedup stats chunk index eval ablations
 
 help:
 	@echo "Corpus (Phase 1):"
 	@echo "  make init      create the SQLite databases (schema only)"
-	@echo "  make ingest    GDELT headlines -> DB"
+	@echo "  make ingest    GDELT headlines -> DB (deprecated: IP-throttled)"
+	@echo "  make ingest-guardian  Guardian API: metadata -> DB, bodies -> cache"
 	@echo "  make fetch     article HTML -> cache (async, robots-aware)"
 	@echo "  make extract   cache -> full clean bodies"
 	@echo "  make dedup     mark near-duplicate wire copies"
@@ -24,6 +25,10 @@ init:
 
 ingest:
 	uv run corpus ingest
+
+# --env-file: GUARDIAN_API_KEY lives in .env (gitignored)
+ingest-guardian:
+	uv run --env-file .env corpus ingest-guardian
 
 fetch:
 	uv run corpus fetch

@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS chunks (
 
 CREATE INDEX IF NOT EXISTS idx_chunks_article  ON chunks(article_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_strategy ON chunks(chunk_strategy);
+
+-- Which (query, week-window) pairs have already been ingested. Makes the ingest
+-- resumable at window granularity: interrupt it at any point and the next run skips
+-- what it already has instead of re-requesting it. Essential under GDELT's rate limits.
+CREATE TABLE IF NOT EXISTS ingest_log (
+    query        TEXT NOT NULL,
+    window_start TEXT NOT NULL,   -- YYYY-MM-DD, inclusive
+    window_end   TEXT NOT NULL,   -- YYYY-MM-DD, exclusive
+    fetched_at   TEXT,
+    n_articles   INTEGER,         -- how many GDELT returned (pre-filtering)
+    PRIMARY KEY (query, window_start, window_end)
+);
 """
 
 # --- HTML cache DB: bulky, disposable, separate -----------------------------------
