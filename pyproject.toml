@@ -9,6 +9,7 @@ dependencies = [
     "datasketch>=2.0.0",
     "ftfy>=6.3.1",
     "httpx>=0.28.1",
+    "mediacloud>=4.0.0",
     "pandas>=3.0.3",
     "pyyaml>=6.0.3",
     "trafilatura>=2.1.0",

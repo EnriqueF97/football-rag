@@ -153,8 +153,9 @@ def _insert(conn, cache_conn, articles: list[dict]) -> tuple[int, int]:
             blobs.append((url, _wrap_html(body), 200, now))
     before = conn.total_changes
     conn.executemany(
-        "INSERT OR IGNORE INTO articles (title, url, domain, published_at, language) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO articles "
+        "(title, url, domain, published_at, language, tier) "
+        "VALUES (?, ?, ?, ?, ?, 'reliable')",
         meta,
     )
     added = conn.total_changes - before

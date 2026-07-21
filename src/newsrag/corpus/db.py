@@ -84,6 +84,17 @@ CREATE TABLE IF NOT EXISTS raw_html (
     status_code INTEGER,            -- HTTP status of the fetch
     fetched_at  TEXT                -- ISO-8601 UTC
 );
+
+-- WARC pointers from Common Crawl discovery (cc.py): where each URL's HTML lives in
+-- CC's archive, so `fetch-cc` can byte-range it. Fetch plumbing, so it lives in the
+-- disposable cache DB — losing it only costs a re-discovery, never articles.
+CREATE TABLE IF NOT EXISTS cc_captures (
+    url           TEXT PRIMARY KEY, -- matches articles.url
+    warc_filename TEXT NOT NULL,
+    warc_offset   INTEGER NOT NULL,
+    warc_length   INTEGER NOT NULL,
+    crawl_ts      TEXT              -- capture timestamp (YYYYMMDDHHMMSS)
+);
 """
 
 
@@ -118,6 +129,9 @@ def init_corpus(path: str | Path = DEFAULT_DB_PATH) -> Path:
         conn.executescript(CORPUS_SCHEMA)
         # Migrations for DBs created before a column existed.
         _ensure_column(conn, "articles", "invalid_reason", "TEXT")
+        # Source-reliability tier (reliable|tabloid|aggregator) — golden-set metadata:
+        # conflicting coverage is only useful if we can tell who is who.
+        _ensure_column(conn, "articles", "tier", "TEXT")
         conn.commit()
     finally:
         conn.close()

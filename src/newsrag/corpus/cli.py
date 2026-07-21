@@ -53,6 +53,30 @@ def _ingest_guardian(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ingest_mediacloud(args: argparse.Namespace) -> int:
+    """Discover reliable-tier articles (BBC/Sky/ESPN) via the Media Cloud API."""
+    from newsrag.corpus import mediacloud_ingest
+
+    mediacloud_ingest.ingest(config_path=args.config)
+    return 0
+
+
+def _ingest_cc(args: argparse.Namespace) -> int:
+    """Discover tabloid-tier articles in the Common Crawl index (metadata + pointers)."""
+    from newsrag.corpus import cc
+
+    cc.discover(config_path=args.config, max_crawls=args.max_crawls)
+    return 0
+
+
+def _fetch_cc(args: argparse.Namespace) -> int:
+    """Download discovered bodies as WARC byte-ranges into the HTML cache."""
+    from newsrag.corpus import cc
+
+    cc.fetch_bodies(concurrency=args.concurrency, limit=args.limit)
+    return 0
+
+
 def _fetch(args: argparse.Namespace) -> int:
     """Download article HTML into the cache (async, robots-aware)."""
     from newsrag.corpus import fetch
@@ -115,6 +139,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="config YAML (uses date_range and the guardian: section)",
     )
     p_guardian.set_defaults(func=_ingest_guardian)
+
+    p_mc = sub.add_parser(
+        "ingest-mediacloud",
+        help="discover reliable-tier articles (BBC/Sky/ESPN) via Media Cloud",
+    )
+    p_mc.add_argument(
+        "--config", default="config/football_queries.yaml",
+        help="config YAML (uses date_range and the mediacloud: section)",
+    )
+    p_mc.set_defaults(func=_ingest_mediacloud)
+
+    p_cc = sub.add_parser(
+        "ingest-cc", help="discover tabloid-tier articles in the Common Crawl index"
+    )
+    p_cc.add_argument(
+        "--config", default="config/football_queries.yaml",
+        help="config YAML (uses date_range and the commoncrawl: section)",
+    )
+    p_cc.add_argument(
+        "--max-crawls", type=int, default=None,
+        help="only the first N crawls (useful for testing)",
+    )
+    p_cc.set_defaults(func=_ingest_cc)
+
+    p_fcc = sub.add_parser(
+        "fetch-cc", help="download discovered bodies as WARC byte-ranges into the cache"
+    )
+    p_fcc.add_argument(
+        "--concurrency", type=int, default=3,
+        help="simultaneous range requests to data.commoncrawl.org (default: 3 — "
+             "higher trips CloudFront's IP block)",
+    )
+    p_fcc.add_argument(
+        "--limit", type=int, default=None,
+        help="fetch at most N bodies (useful for testing)",
+    )
+    p_fcc.set_defaults(func=_fetch_cc)
 
     p_fetch = sub.add_parser("fetch", help="download article HTML into the cache")
     p_fetch.add_argument(

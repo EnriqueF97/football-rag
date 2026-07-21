@@ -117,17 +117,21 @@ def stats(db_path=db.DEFAULT_DB_PATH, cache_path=db.DEFAULT_CACHE_PATH) -> dict:
             print("  none detected")
 
         # --- Domain distribution (validates the allowlist) -----------------------
-        print("\nTOP DOMAINS (validates the source allowlist)")
+        # Concentration is measured over the USABLE corpus, not total ingested: a domain
+        # with many bodyless/invalid/duplicate rows (e.g. ESPN's empty 202s) would
+        # otherwise pad the denominator and hide the real over-representation the golden
+        # set would inherit. `share` = domain's usable / total usable.
+        print("\nTOP DOMAINS (validates the source allowlist) — % of USABLE corpus")
         domain_rows = list(
             conn.execute(
                 "SELECT domain, COUNT(*) AS n, "
                 "SUM(CASE WHEN body_valid = 1 AND dup_of IS NULL THEN 1 ELSE 0 END) AS good "
-                "FROM articles GROUP BY domain ORDER BY n DESC LIMIT 15"
+                "FROM articles GROUP BY domain ORDER BY good DESC, n DESC LIMIT 15"
             )
         )
-        print(f"  {'domain':<26}{'total':>7}{'usable':>8}")
+        print(f"  {'domain':<26}{'total':>7}{'usable':>8}{'%usable':>9}")
         for domain, n, good in domain_rows:
-            share = 100 * n / total
+            share = 100 * (good or 0) / usable if usable else 0
             flag = "  ⚠ over-represented" if share > 40 else ""
             print(f"  {(domain or '?'):<26}{n:>7}{(good or 0):>8}   {share:>5.1f}%{flag}")
 
@@ -160,11 +164,18 @@ def stats(db_path=db.DEFAULT_DB_PATH, cache_path=db.DEFAULT_CACHE_PATH) -> dict:
                 print(f"  mean                 {int(statistics.mean(lengths))}")
 
         # --- Readiness gate ------------------------------------------------------
-        largest_share = (100 * domain_rows[0][1] / total) if domain_rows else 0
+        # Largest usable share across ALL domains (not just the top-15 shown, and by
+        # usable count — the denominator that matters for the golden set).
+        top_usable = _scalar(
+            conn,
+            "SELECT MAX(g) FROM (SELECT SUM(CASE WHEN body_valid=1 AND dup_of IS NULL "
+            "THEN 1 ELSE 0 END) AS g FROM articles GROUP BY domain)",
+        )
+        largest_share = (100 * top_usable / usable) if usable else 0
         checks = [
             ("enough usable articles (≥1000)", usable >= 1000),
             ("median body ≥ 800 chars", median_len >= 800),
-            ("no domain over 40% of corpus", largest_share <= 40),
+            ("no domain over 40% of usable corpus", largest_share <= 40),
             ("largest dup cluster < 20", max(cluster_sizes, default=0) < 20),
         ]
         print("\nREADY FOR THE GOLDEN SET (Phase 2)?")

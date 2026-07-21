@@ -21,7 +21,7 @@
 | # | Phase | Weight | Local % | Status |
 |---|-------|:------:|:-------:|--------|
 | 0 | Project scaffolding | 5% | 100% | ✅ done |
-| 1 | Corpus construction (fix + harden the scraper) | 15% | 100% | ✅ done (code) |
+| 1 | Corpus construction (fix + harden the scraper) | 15% | 100% | ✅ done — 31.8k usable, 7 balanced sources, **all 4 readiness gates PASS** |
 | 2 | Golden evaluation set | 20% | 0% | not started |
 | 3 | Retrieval core (chunk · embed · index · hybrid) | 15% | 0% | not started |
 | 4 | Generation + citations | 8% | 0% | not started |
@@ -222,9 +222,103 @@ See `README.md` for why each of these is load-bearing for evaluation, not polish
 - [x] **1.6.6** Persisted `invalid_reason` (new column + idempotent migration in
       `db.py::_ensure_column`) so losses can be explained after the run, not just during it.
 
-**Done when:** `make ingest && make fetch && make extract && make dedup` rebuilds the
-corpus from scratch, every valid article has a full clean body, near-dups are marked,
-and `stats` prints a health summary. The DB stays out of git; the scripts reproduce it.
+### 1.7 Guardian ingest (`guardian.py`) — ✅ *done, corpus is real*
+- [x] **1.7.1** Resumable ingest over the Open Platform API (`corpus ingest-guardian` /
+      `make ingest-guardian`; key loaded from `.env` via `uv run --env-file`). Reuses the
+      `ingest_log` ledger with 28-day windows — same resume contract as GDELT.
+- [x] **1.7.2** **Bodies ride the existing pipeline.** The API's `body` HTML is stored in
+      the `raw_html` cache (status 200), so `extract.py` processes Guardian through the
+      same trafilatura+ftfy+validity path as any fetched source — same `content_hash`
+      semantics for dedup, paragraphs preserved. `fetch` auto-skips (already cached).
+- [x] **1.7.3** Transport-error retry (TLS handshake timeout killed the first run; now
+      `httpx.TransportError` shares the 429/5xx retry budget).
+- [x] **1.7.4** **Backfill executed 2026-07-19**: 10,682 articles, Aug 2024 → Jun 2026,
+      ~130 calls, zero failed windows. `extract`: 10,288 valid bodies (99% ok; 64
+      off_topic; median 4,649 chars). Monthly coverage even (~400–650/month, no gaps).
+- **Readiness gate after this run: 3/4 PASS.** Volume, body length, dup clusters all
+  pass; **FAIL: theguardian.com is ~97% of the corpus** — the single-source
+  concentration the gate exists to catch. Unblocked by 1.8, not by more Guardian.
+
+### 1.8 Common Crawl ingest — tabloid tier (`cc.py`) — ✅ *executed 2026-07-21*
+- [x] **1.8.1** Discovery via the CDX index (`corpus ingest-cc` / `make ingest-cc`):
+      8 football URL patterns × monthly crawls, ledger-resumable, patient retries.
+      **The CDX index is operationally flaky** (502/504 under load, then went fully
+      down mid-run) — the run banked 92 of ~184 pattern×crawl pairs before the outage;
+      the rest resume when the index recovers. Discovered ~16k captures.
+- [x] **1.8.2** Bodies via WARC **byte-range** from `data.commoncrawl.org` (`fetch-cc`)
+      → `raw_html` cache, status 200 — never touches the publisher, no Cloudflare/
+      cookies. **CloudFront IP-blocks a burst**: concurrency 8 earned a 403 wall after
+      ~2k/16k. Fixed: gentle defaults (concurrency 3 + 0.3s pace), 403 treated as
+      retryable-here, and a `DataThrottled` breaker aborts if a batch is majority-403.
+      Second harvest at the gentle rate: 13,745/13,747 bodies, no block.
+- [x] **1.8.4** `tier` column on `articles` (`reliable`/`tabloid`) — Guardian=reliable,
+      CC=tabloid. Migration in `db.py::_ensure_column`. Feeds source-reliability Qs.
+- [x] **1.8.6** **Strict-window + junk-page cleanup (the real lesson).** CC's CDX
+      `from`/`to` filters *capture* time, not publication time, so recently-crawled OLD
+      pages slipped through: 9,873 pre-window articles (FourFourTwo archives back to
+      1997; caughtoffside 2006–2015 — verified real via URL-path + `<meta>` dates, not a
+      bug). Also two classes of auto-generated non-journalism: FourFourTwo "All content
+      Archive | \<month\>" index pages and TEAMtalk per-player stat stubs
+      (`/player/{injury,results,fixtures,career,squad,…}`) — these formed the big dup
+      clusters. Per user decision (2026-07-21): **strict window** (drop everything
+      pre-2024-08). Hardened `cc.py`: archive/stat-stub filters in `looks_like_article`
+      + a URL-path window filter at discovery so this never re-enters. Trimmed the DB
+      (26,659 → 15,247 rows) and re-ran dedup.
+- [ ] **1.8.3** Wayback Machine CDX fallback for URLs CC missed — *deferred* (not needed
+      yet; revisit if completing discovery leaves gaps).
+- [x] **1.8.5** Re-ran `stats`. **Now 3/4 PASS** (volume, body length, dup cluster<20).
+      Temporal coverage clean and even, 2024-08→2026-06, no gaps. **Still FAIL: domain
+      concentration — theguardian.com = 70.1%** of 14,590 usable. The honest number: the
+      tabloid tier only yielded ~4k in-window usable (discovery half-done + much of CC's
+      capture was old). Guardian dominance is now the sole blocker → **1.9**.
+
+### 1.9 Reliable-tier diversification (BBC / Sky / ESPN) — *NEXT, the sole Phase-2 blocker*
+> User decision (2026-07-21): close the source-balance gap by broadening the *reliable*
+> tier, not (only) by finishing tabloid discovery. To drop Guardian under 40% of the
+> in-window corpus we need ~11–12k more non-Guardian in-window articles; BBC/Sky/ESPN
+> are high-volume enough to supply that.
+- [x] **1.9.1** **Media Cloud ingest — EXECUTED 2026-07-21** (`mediacloud_ingest.py`,
+      `make ingest-mediacloud`, key in `.env`). Resolves domain→source id, paginates the
+      Online News Archive per (source × month), INSERT OR IGNORE (tier='reliable'),
+      ledger-resumable. Discovered BBC/Sky/ESPN. **Three real-world lessons, all now in
+      the code:** (a) **per-source cap** `max_per_month` (=500) — BBC yields ~1500/month
+      and unbounded would become the *new* >40% domain (swapping Guardian's problem);
+      trimmed BBC 30k→10k to the cap. (b) **retry widened** to `requests` connection
+      resets *and* Media Cloud `APIResponseError` 5xx (a Cloudflare 521 killed run #2).
+      (c) **multi-sport contamination** — "football" is ambiguous (US = NFL: ESPN
+      returned NFL/college-football; BBC/Sky returned tennis/rugby). Gate on the soccer
+      path segment `/football/` (UK) or `/soccer/` (US) in `_is_soccer_url` + a language
+      filter (BBC Hausa etc.). Clean reliable tier: Guardian 10,614 · BBC 6,312 · ESPN
+      (see below) · Sky 829 usable.
+- [x] **1.9.2** Bodies via **direct fetch** — BBC/Sky fetch fine (200): 13,887/13,909 ok.
+      **ESPN is a dead end for simple fetch: it returns `202` with an EMPTY body**
+      (JS/bot-mitigation wall). Its 4,622 discovered soccer URLs cache as empty 202s and
+      never extract → **0 usable from ESPN**. Recovering them would need a JS-capable
+      fetch or Wayback (deferred). Fixed a latent extract quirk this exposed: extract
+      only reads `status_code=200`, correctly rejecting the empty 202s.
+- [x] **1.6.7** **Readiness-gate denominator bug FIXED (`stats.py`).** The domain-
+      concentration gate measured `domain_total / total_ingested`, so bodyless/invalid/
+      duplicate rows (ESPN's 4,622 empty 202s especially) padded the denominator and gave
+      a **false PASS**. Now measured over the **usable** corpus
+      (`domain_usable / total_usable`). This flipped a fake PASS into the honest number:
+      **Guardian = 48.8% of usable → real FAIL.** A false PASS is worse than a true FAIL;
+      the golden set inherits whatever the corpus actually is.
+- [x] **1.9.3** **Finished CC tabloid discovery 2026-07-21** — CDX recovered; ran the 92
+      remaining pattern×crawl pairs → 11,661 new articles, 11,661/11,661 bodies fetched
+      (gentle rate, no CloudFront block), 10,133 new valid bodies.
+- [x] **1.9.4** **ALL 4 READINESS GATES PASS (honest, usable-based).** Final corpus:
+      **31,819 usable articles**, 2024-08→2026-06, even monthly coverage. Domain mix (of
+      usable): Guardian 33.4% · BBC 19.8% · football365 12.9% · teamtalk 12.6% · 90min
+      9.2% · fourfourtwo 8.7% · Sky 2.6% · mirror 0.8%. Reliable + tabloid tiers, no
+      source over 40%. `stats` prints "✅ corpus looks ready — proceed to Phase 2".
+      (ESPN's 4,622 discovered URLs remain bodyless — the 202 wall — a documented,
+      optional future gain via Wayback; not needed, the gate passes without them.)
+
+**Done when:** `make ingest-guardian && make ingest-cc && make fetch-cc && make extract
+&& make dedup` (plus the 1.9 reliable-tier ingest) rebuilds the corpus, every valid
+article has a full clean body, near-dups are marked, and `stats` shows all-PASS.
+*(2026-07-21: Guardian + CC tabloid tiers done end-to-end, 14,590 usable, 3/4 PASS;
+the domain-concentration gate blocks Phase 2 until the reliable tier is diversified.)*
 
 ---
 

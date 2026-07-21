@@ -107,6 +107,44 @@ sources:
     - uefa.com
     - fifa.com
 
+# --- Common Crawl discovery (used by cc.py — the tabloid tier) -----------------------
+# Only domains VERIFIED present in Common Crawl (the reliable tier — Guardian, BBC,
+# Sky, ESPN, GiveMeSport — blocks CCBot and is NOT here; Guardian arrives via its API).
+# Patterns are CDX prefix queries: no scheme, no www (SURT canonicalization ignores
+# both). General-news outlets are pinned to their football path; dedicated football
+# sites take the whole domain.
+commoncrawl:
+  first_crawl: "CC-MAIN-2024-33" # first monthly crawl covering date_range.start
+  sleep_seconds: 4 # pause between CDX queries (the index 502/504s under load)
+  max_per_pattern_per_crawl: 250 # volume knob: keeps the tabloid tier balanced
+  url_patterns:
+    - "mirror.co.uk/sport/football/*"
+    - "independent.co.uk/sport/football/*"
+    - "90min.com/*"
+    - "teamtalk.com/*"
+    - "caughtoffside.com/*"
+    - "fourfourtwo.com/*"
+    - "thisisanfield.com/*"
+    - "football365.com/*"
+
+# --- Media Cloud discovery (used by mediacloud_ingest.py — reliable tier) ------------
+# The reliable outlets Common Crawl can't reach (they block CCBot) but that fetch fine
+# directly. Media Cloud's Online News Archive discovers their in-window URLs; bodies come
+# from the normal fetch+extract. `query` is a full-text football filter (these sites are
+# multi-sport); the extract.py validity filter removes any non-football residue.
+mediacloud:
+  sources:
+    - bbc.co.uk
+    - skysports.com
+    - espn.com
+  query: 'football OR soccer OR "premier league" OR "champions league"'
+  page_size: 1000
+  # Cap per source per month. BBC alone yields ~1500/month — unbounded it would become
+  # the new >40% over-represented domain, just swapping Guardian's problem for BBC's.
+  # ~500 keeps each reliable source in the same ballpark as Guardian (~460/month) so the
+  # tier is balanced. A knob: raise it if a source is under-represented after `stats`.
+  max_per_month: 500
+
 # --- Body validity filter (used by extract.py) --------------------------------------
 # Decides whether an extracted body is a usable football article or junk (nav chrome,
 # paywall stub, block page, off-topic GDELT noise like a TV listing). Tune freely.

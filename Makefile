@@ -30,6 +30,16 @@ ingest:
 ingest-guardian:
 	uv run --env-file .env corpus ingest-guardian
 
+# --env-file: MEDIACLOUD_API_KEY lives in .env (gitignored)
+ingest-mediacloud:
+	uv run --env-file .env corpus ingest-mediacloud
+
+ingest-cc:
+	uv run corpus ingest-cc
+
+fetch-cc:
+	uv run corpus fetch-cc
+
 fetch:
 	uv run corpus fetch
 
