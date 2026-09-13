@@ -54,6 +54,41 @@ def load_rules(config_path: str | Path = DEFAULT_CONFIG) -> dict:
     return rules
 
 
+# Leading nav breadcrumb some sites (TEAMtalk especially) leave at the top of the body:
+# "Chelsea\nPremier League • England\n<real headline>…". The "<competition> • <country>"
+# line is the signature. Strip everything up to and including it, but only when it sits
+# right at the start (first ~120 chars), so a legitimate mid-article "• England" is safe.
+_BREADCRUMB = re.compile(
+    r"•\s*(England|Spain|Italy|Germany|France|Scotland|Wales|Netherlands|Portugal|"
+    r"Europe|World|Brazil|Argentina|Turkey|Belgium|USA)\s*\n"
+)
+
+# BBC bodies come out as "<headline repeated>\n- Published\n<real body>": trafilatura
+# keeps the headline line and the "- Published" timestamp label. Drop both — the headline
+# is already in `title`, the label is chrome. Anchored to the start with a one-line
+# headline (≤250 chars) so it can't eat real content.
+_BBC_PUBLISHED = re.compile(r"^[^\n]{0,250}\n-\s*Published\s*\n")
+# BBC also appends related-article teasers as whole lines "<headline> - Published<date>"
+# and, occasionally, bare "- Published" label lines. Both are chrome — drop the entire
+# teaser line, and any leftover bare label line.
+_BBC_TEASER = re.compile(r"[^\n]*-\s*Published\s*\d[^\n]*\n?")
+_PUBLISHED_LINE = re.compile(r"\n-\s*Published\s*(?=\n|$)")
+
+
+def strip_boilerplate(body: str) -> str:
+    """Remove boilerplate trafilatura leaves in some bodies: leading nav breadcrumbs and
+    BBC '- Published' timestamp chrome (leading headline block + embedded label lines)."""
+    m = _BREADCRUMB.search(body[:120])
+    if m:
+        body = body[m.end():]
+    body = _BBC_PUBLISHED.sub("", body, count=1)     # leading "headline\n- Published\n"
+    body = _BBC_TEASER.sub("", body)                 # related-article teaser lines
+    body = _PUBLISHED_LINE.sub("", body)             # any remaining bare label lines
+    # Stray leaked labels occasionally left on their own line at the top.
+    body = re.sub(r"^(?:-\s*Published|Published|Advertisement)\s*\n", "", body)
+    return body.strip()
+
+
 def _normalize(text: str) -> str:
     """Collapse whitespace and lowercase — the canonical form used for hashing."""
     return re.sub(r"\s+", " ", text).strip().lower()
@@ -114,7 +149,7 @@ def extract(
             if not body:
                 tally["extract_failed"] += 1
                 continue
-            body = ftfy.fix_text(body)
+            body = strip_boilerplate(ftfy.fix_text(body))
             valid, reason = is_valid_body(body, rules)
             tally[reason] += 1
             updates.append(

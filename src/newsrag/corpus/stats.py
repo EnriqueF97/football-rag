@@ -20,6 +20,35 @@ from pathlib import Path
 from newsrag.corpus import db
 
 
+#: Readiness checks that FAIL but were consciously accepted, mapped to the reason.
+#:
+#: This never changes a threshold and never hides a failure — the check still runs, still
+#: reports FAIL, and the real number is still printed above. It only records that a human
+#: looked at this specific failure and decided to proceed, so the final verdict doesn't
+#: keep saying "not ready" about a closed decision.
+#:
+#: Deliberately hardcoded rather than config-driven: accepting a gate should require a
+#: reviewable code change, not a knob that is easy to turn when a number is inconvenient.
+#: Add an entry ONLY after the user explicitly decides, and say who/when/why.
+#: Each entry carries `valid_while`: the acceptance applies ONLY while reality still looks
+#: like what was actually accepted. A decision about "Guardian at 40.2%" must not silently
+#: cover "some other domain at 80%" — otherwise the exception quietly becomes a blanket
+#: waiver. When `valid_while` no longer holds, the gate blocks again and says why.
+ACCEPTED_FAILURES: dict[str, dict] = {
+    "no domain over 40% of usable corpus": {
+        "reason": (
+            "2026-07-22 by Enrique — Guardian sits at 40.2% after the strict-window "
+            "cleanup shrank the tabloid tier. Chose to proceed rather than pad the "
+            "corpus, over-collect, or move the threshold."
+        ),
+        "valid_while": lambda ctx: (
+            ctx.get("top_domain") == "theguardian.com" and ctx.get("largest_share", 100) <= 42.0
+        ),
+        "expires_note": "accepted for Guardian at ~40%; a different domain or >42% is a new decision",
+    },
+}
+
+
 def _scalar(conn, sql: str) -> int:
     row = conn.execute(sql).fetchone()
     return row[0] if row and row[0] is not None else 0
@@ -166,11 +195,11 @@ def stats(db_path=db.DEFAULT_DB_PATH, cache_path=db.DEFAULT_CACHE_PATH) -> dict:
         # --- Readiness gate ------------------------------------------------------
         # Largest usable share across ALL domains (not just the top-15 shown, and by
         # usable count — the denominator that matters for the golden set).
-        top_usable = _scalar(
-            conn,
-            "SELECT MAX(g) FROM (SELECT SUM(CASE WHEN body_valid=1 AND dup_of IS NULL "
-            "THEN 1 ELSE 0 END) AS g FROM articles GROUP BY domain)",
-        )
+        top_row = conn.execute(
+            "SELECT domain, SUM(CASE WHEN body_valid=1 AND dup_of IS NULL THEN 1 ELSE 0 END) g "
+            "FROM articles GROUP BY domain ORDER BY g DESC LIMIT 1"
+        ).fetchone()
+        top_domain, top_usable = (top_row[0], top_row[1] or 0) if top_row else (None, 0)
         largest_share = (100 * top_usable / usable) if usable else 0
         checks = [
             ("enough usable articles (≥1000)", usable >= 1000),
@@ -178,13 +207,34 @@ def stats(db_path=db.DEFAULT_DB_PATH, cache_path=db.DEFAULT_CACHE_PATH) -> dict:
             ("no domain over 40% of usable corpus", largest_share <= 40),
             ("largest dup cluster < 20", max(cluster_sizes, default=0) < 20),
         ]
+        ctx = {"top_domain": top_domain, "largest_share": largest_share, "usable": usable}
         print("\nREADY FOR THE GOLDEN SET (Phase 2)?")
+        unaddressed = []
+        accepted_any = False
         for label, ok in checks:
-            print(f"  {'PASS' if ok else 'FAIL'}  {label}")
-        if all(ok for _, ok in checks):
-            print("\n  ✅ corpus looks ready — proceed to Phase 2")
+            if ok:
+                print(f"  PASS  {label}")
+                continue
+            print(f"  FAIL  {label}")
+            exc = ACCEPTED_FAILURES.get(label)
+            if exc and exc["valid_while"](ctx):
+                print(f"        └─ accepted {exc['reason']}")
+                accepted_any = True
+            elif exc:
+                # The decision existed but reality drifted away from what was accepted.
+                print(f"        └─ ⚠ prior acceptance NO LONGER APPLIES "
+                      f"({exc['expires_note']}) — this needs a new decision")
+                unaddressed.append(label)
+            else:
+                unaddressed.append(label)
+
+        if unaddressed:
+            print("\n  ⛔ not ready — unaddressed failures above")
+        elif accepted_any:
+            print("\n  ✅ ready — proceeding with documented accepted exception(s)")
+            print("     (the FAIL above is real and stays reported; it was a decision)")
         else:
-            print("\n  ⛔ not ready yet — see the failing checks above")
+            print("\n  ✅ corpus looks ready — proceed to Phase 2")
         print()
     finally:
         conn.close()

@@ -114,6 +114,14 @@ def _stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def _smell(args: argparse.Namespace) -> int:
+    """Run the per-document smell-test battery (read-only)."""
+    from newsrag.corpus import smell
+
+    smell.smell()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="corpus",
@@ -216,6 +224,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_stats = sub.add_parser("stats", help="print a corpus health summary")
     p_stats.set_defaults(func=_stats)
+
+    p_smell = sub.add_parser(
+        "smell", help="per-document anomaly checks over the usable corpus"
+    )
+    p_smell.set_defaults(func=_smell)
 
     return parser
 

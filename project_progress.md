@@ -21,7 +21,7 @@
 | # | Phase | Weight | Local % | Status |
 |---|-------|:------:|:-------:|--------|
 | 0 | Project scaffolding | 5% | 100% | ✅ done |
-| 1 | Corpus construction (fix + harden the scraper) | 15% | 100% | ✅ done — 31.8k usable, 7 balanced sources, **all 4 readiness gates PASS** |
+| 1 | Corpus construction (fix + harden the scraper) | 15% | 100% | ✅ done — 26.4k usable, audited & cleaned; 3/4 gates PASS, Guardian 40.2% **accepted** (deliberate) |
 | 2 | Golden evaluation set | 20% | 0% | not started |
 | 3 | Retrieval core (chunk · embed · index · hybrid) | 15% | 0% | not started |
 | 4 | Generation + citations | 8% | 0% | not started |
@@ -314,11 +314,47 @@ See `README.md` for why each of these is load-bearing for evaluation, not polish
       (ESPN's 4,622 discovered URLs remain bodyless — the 202 wall — a documented,
       optional future gain via Wayback; not needed, the gate passes without them.)
 
+### 1.10 Quality audit + cleanup (`smell.py`) — ✅ *done 2026-07-22*
+*The readiness gates pass on aggregates but can't see inside a document. This step is the
+per-document audit that caught what the gates missed.*
+- [x] **1.10.1** **Smell-test battery** (`corpus smell` / `make smell`): high-precision
+      anomaly checks over the usable set (foreign language, paywall stubs, nav-breadcrumb/
+      boilerplate leakage, name-like titles, exact-dup hashes dedup missed, out-of-window
+      dates, stub/oversized bodies). Reports counts + examples; never deletes. Runs
+      alongside `stats`. This is the Level-2 rung of the verification ladder (Level 1 =
+      gates, 3 = random-sample read, 4 = LLM-labelled audit, 5 = task-based).
+- [x] **1.10.2** **Contamination it surfaced, then removed** (deterministic filters in
+      `cc.py`/`mediacloud_ingest.py` + trims): Spanish edition `90min.com/es/` (891),
+      `/authors/` pages, TEAMtalk player hubs (bare `/slug`), BBC live "stats &
+      head-to-head" template pages, football365/90min club-hub & index pages, and
+      **5,952 out-of-window articles** (CC slug-only URLs bypass the discovery window
+      filter; their real HTML-meta date was pre-2024-08). Also fixed the `/author/` vs
+      `/authors/` singular/plural gap.
+- [x] **1.10.3** **Boilerplate stripped in the body** (`extract.strip_boilerplate`,
+      applied in-place + re-hashed + re-deduped): TEAMtalk nav breadcrumb
+      "`<club>`/`<comp>` • `<country>`" (3.7k), and **BBC "- Published" chrome** — the
+      duplicated leading headline + the timestamp label, plus the related-article teaser
+      lines BBC embeds ("`<headline>` - Published`<date>`"). ~13k bodies cleaned across
+      passes; BBC "- Published" now 0 in the usable set.
+- [x] **1.10.4** **Self-audit caught a real over-delete**: reusing `cc.py`'s
+      `looks_like_article` (which rejects any `?query`) on the *whole* table wrongly
+      deleted ~2,181 real BBC articles (their Media Cloud URLs carry `?at_medium` tracking
+      params). Recovered by clearing the Media Cloud ledger and re-running discovery+fetch.
+      Lesson recorded: a filter written for one source is not a general predicate.
+
+> **DECISION (user, 2026-07-22): accept Guardian at 40.2% of the usable corpus.** The
+> strict-window cleanup (correctly) shrank the tabloid tier and nudged Guardian just over
+> the 40% gate. Rather than pad the denominator (the very bug fixed in 1.6.7), game the
+> threshold, or spend more on tabloid/ESPN volume for 0.2%, the user chose to proceed.
+> `stats.py` keeps reporting the honest 40.2% FAIL — the gate is not falsified; this is a
+> documented, deliberate exception. Phase 1 is **complete**.
+
 **Done when:** `make ingest-guardian && make ingest-cc && make fetch-cc && make extract
-&& make dedup` (plus the 1.9 reliable-tier ingest) rebuilds the corpus, every valid
-article has a full clean body, near-dups are marked, and `stats` shows all-PASS.
-*(2026-07-21: Guardian + CC tabloid tiers done end-to-end, 14,590 usable, 3/4 PASS;
-the domain-concentration gate blocks Phase 2 until the reliable tier is diversified.)*
+&& make dedup` (plus 1.9 reliable-tier ingest + 1.10 cleanups) rebuilds the corpus, every
+valid article has a full clean body, near-dups are marked, `stats` + `smell` are clean.
+*(2026-07-22: **DONE** — 26,378 usable, 2024-08→2026-06 even coverage, per-document
+audited; Guardian 40.2% accepted. Reliable 73% / tabloid 27%. ESPN's 4,622 stay bodyless
+(202 wall), excluded from usable — optional Wayback recovery deferred to post-Phase-2.)*
 
 ---
 
@@ -379,7 +415,9 @@ legible, every knob an ablation switch.*
 - [ ] **3.3.2** Dense retriever: top-k nearest neighbours
 
 ### 3.4 Lexical + hybrid (`rag/retrieve.py`)
-- [ ] **3.4.1** BM25 index (the léxico half — nails tickers, names, dates)
+- [ ] **3.4.1** BM25 index (the lexical half — nails player names, clubs, fees, dates,
+      exactly where dense embeddings fumble; football is entity-dense, so this should
+      show a clear, explainable win)
 - [ ] **3.4.2** Hybrid fusion (weighted score or Reciprocal Rank Fusion)
 - [ ] **3.4.3** Unified `retrieve(query, config)` → ranked chunks; config selects
       dense / BM25 / hybrid

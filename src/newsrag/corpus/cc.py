@@ -49,13 +49,23 @@ _USER_AGENT = "newsrag-corpus/0.1 (personal research project; contact via github
 # high-precision — the validity filter in extract.py is the real gate; this only
 # avoids wasting byte-range fetches on obvious non-articles.
 _NON_ARTICLE = (
-    "/robots.txt", "/tag/", "/tags/", "/category/", "/author/", "/page/",
-    "/search", "/newsletter", "/rss", "/feed", "/sitemap", "/video/",
+    "/robots.txt", "/tag/", "/tags/", "/category/", "/author/", "/authors/",
+    "/page/", "/search", "/newsletter", "/rss", "/feed", "/sitemap", "/video/",
     "/betting/", "/preference", "/privacy", "/cookie", "/about-us",
     # Archive/date index pages (e.g. fourfourtwo.com "All content Archive | Nov 2003"):
     # near-identical boilerplate that formed a 60-item dup cluster on the first run.
     "/all-content-archive", "/archive/", "/archives/",
 )
+
+# Non-English language editions under a leading language-code segment (90min.com/es/…
+# is a full Spanish site CC captured — 891 leaked into an English corpus).
+_LANG_EDITION = re.compile(r"^/(es|fr|de|it|pt|ar|nl)/", re.I)
+
+# TEAMtalk per-player hub pages: a single short slug (a player name, ≤3 words) with no
+# further path — teamtalk.com/adam-hlozek. Real articles are either multi-segment
+# (/club/slug) or long single slugs (many hyphens); verified no real article is a
+# single-segment ≤3-word slug, so this is safe.
+_TT_PLAYER_HUB = re.compile(r"^/[a-z0-9]+(?:-[a-z0-9]+){0,2}/?$", re.I)
 
 _URL_DATE = re.compile(r"/(20\d{2})/(\d{2})/")
 
@@ -153,7 +163,11 @@ def looks_like_article(url: str) -> bool:
     path = p.path or "/"
     if path == "/" or p.query:
         return False
+    if _LANG_EDITION.match(path):
+        return False
     if _STAT_STUB.search(path):
+        return False
+    if "teamtalk.com" in url.lower() and _TT_PLAYER_HUB.match(path):
         return False
     low = url.lower()
     return not any(marker in low for marker in _NON_ARTICLE)

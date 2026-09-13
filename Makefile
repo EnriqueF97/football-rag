@@ -2,7 +2,7 @@
 # Targets that route through `corpus` fail loudly (NotImplementedError) until their
 # Phase 1 logic lands; the rest echo their plan phase. See project_progress.md.
 
-.PHONY: help init ingest ingest-guardian fetch extract dedup stats chunk index eval ablations
+.PHONY: help init ingest ingest-guardian ingest-mediacloud ingest-cc fetch-cc fetch extract dedup stats smell chunk index eval ablations
 
 help:
 	@echo "Corpus (Phase 1):"
@@ -13,6 +13,7 @@ help:
 	@echo "  make extract   cache -> full clean bodies"
 	@echo "  make dedup     mark near-duplicate wire copies"
 	@echo "  make stats     corpus health summary"
+	@echo "  make smell     per-document anomaly checks (usable set)"
 	@echo "Retrieval / eval (Phases 3-6):"
 	@echo "  make chunk     split bodies into chunks            [not implemented]"
 	@echo "  make index     embed + build vector/BM25 indexes   [not implemented]"
@@ -51,6 +52,9 @@ dedup:
 
 stats:
 	uv run corpus stats
+
+smell:
+	uv run corpus smell
 
 # --- Phases 3-6: not implemented yet, fail loudly ---
 chunk:

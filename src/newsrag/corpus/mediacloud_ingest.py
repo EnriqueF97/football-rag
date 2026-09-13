@@ -120,6 +120,11 @@ def _insert_stories(conn, stories: list[dict], domain: str) -> int:
             continue
         if not _is_soccer_url(url):
             continue
+        # BBC auto-generated match stat pages ("X vs Y: <league> stats & head-to-head"):
+        # near-identical 854-char templates, not journalism — they formed a dup cluster.
+        title = s.get("title") or ""
+        if "stats & head-to-head" in title.lower():
+            continue
         # BBC/ESPN publish foreign-language editions (BBC Hausa, ESPN Deportes...) that
         # match a loose query. Drop them when the language is known and not English;
         # keep unknown-language rows and let extract.py's validity filter decide.
