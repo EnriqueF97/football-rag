@@ -349,6 +349,24 @@ per-document audit that caught what the gates missed.*
 > `stats.py` keeps reporting the honest 40.2% FAIL — the gate is not falsified; this is a
 > documented, deliberate exception. Phase 1 is **complete**.
 
+### 1.11 LLM-assisted audit (`audit.py`, `annotate.py`) — ✅ *done, negative result*
+- [x] **1.11.1** `corpus audit` — local LLM (Ollama / `gemma4:e2b`) labels a sample
+      ARTICLE/TEMPLATE with JSON-schema-constrained output. **Never writes to the corpus.**
+- [x] **1.11.2** `corpus annotate` — blind terminal annotation, incremental + resumable.
+      Prototype for the Phase-2 golden-set annotator.
+- [x] **1.11.3** **Worked as a discovery tool**: surfaced three junk classes nobody had
+      enumerated (affiliate/sponsored posts, section hub pages, prize-draw terms), each
+      then encoded as a deterministic rule. Corpus 26,378 → **25,215 usable**.
+- [x] **1.11.4** **Rejected as a filter.** Validated against 72 blind human labels
+      (`data/audit/label_validation.jsonl`): best case 4/22 agreement on its flags — it
+      would delete ~18 real articles to remove 4 template pages. Input-length ablation
+      (400 / 800 / 1600 chars) did not help; more text made it *more* permissive, because
+      hub pages are built from article fragments.
+- [x] **1.11.5** **Decision (2026-09-14, Enrique): stop here.** Remaining junk is 2-4% and
+      mostly *inert* — see the noise taxonomy in AGENTS §10. *Caveat on record: the rubric
+      mixed three criteria (journalism-ness / extraction quality / usefulness), so part of
+      that disagreement is measurement artefact, not model error.*
+
 **Done when:** `make ingest-guardian && make ingest-cc && make fetch-cc && make extract
 && make dedup` (plus 1.9 reliable-tier ingest + 1.10 cleanups) rebuilds the corpus, every
 valid article has a full clean body, near-dups are marked, `stats` + `smell` are clean.

@@ -37,9 +37,11 @@ from newsrag.corpus import db
 ACCEPTED_FAILURES: dict[str, dict] = {
     "no domain over 40% of usable corpus": {
         "reason": (
-            "2026-07-22 by Enrique — Guardian sits at 40.2% after the strict-window "
-            "cleanup shrank the tabloid tier. Chose to proceed rather than pad the "
-            "corpus, over-collect, or move the threshold."
+            "2026-07-22 by Enrique — chose to proceed with Guardian dominant rather than "
+            "pad the corpus, over-collect, or move the threshold. Was 40.2% then; now "
+            "41.7% after the 2026-09-13 non-journalism cleanup removed ~1,000 template "
+            "pages that had been padding the denominator (a truer number, not a worse "
+            "corpus). NOTE: only ~0.3pp of headroom left under the 42% ceiling."
         ),
         "valid_while": lambda ctx: (
             ctx.get("top_domain") == "theguardian.com" and ctx.get("largest_share", 100) <= 42.0

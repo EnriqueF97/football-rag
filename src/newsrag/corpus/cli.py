@@ -91,10 +91,13 @@ def _fetch(args: argparse.Namespace) -> int:
 
 
 def _extract(args: argparse.Namespace) -> int:
-    """Extract full clean bodies from the cached HTML."""
+    """Extract full clean bodies from the cached HTML (or just re-apply validity rules)."""
     from newsrag.corpus import extract
 
-    extract.extract(config_path=args.config, reextract=args.reextract)
+    if args.revalidate:
+        extract.revalidate(config_path=args.config)
+    else:
+        extract.extract(config_path=args.config, reextract=args.reextract)
     return 0
 
 
@@ -103,6 +106,27 @@ def _dedup(args: argparse.Namespace) -> int:
     from newsrag.corpus import dedup
 
     dedup.dedup(threshold=args.threshold)
+    return 0
+
+
+def _audit(args: argparse.Namespace) -> int:
+    """LLM-assisted audit (L4): report non-journalism candidates for human review."""
+    from newsrag.corpus import audit
+
+    audit.audit(
+        model=args.model, limit=args.limit, scope=args.scope,
+        reason=args.reason, title_like=args.title_like, out=args.out,
+        chars=args.chars,
+    )
+    return 0
+
+
+def _annotate(args: argparse.Namespace) -> int:
+    """Blind human annotation, used to validate the LLM classifier."""
+    from newsrag.corpus import annotate
+
+    annotate.annotate(input_path=args.input, out=args.out, limit=args.limit,
+                      chars=args.chars)
     return 0
 
 
@@ -210,6 +234,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="re-run extraction on already-extracted articles",
     )
     p_extract.add_argument(
+        "--revalidate", action="store_true",
+        help="re-apply validity rules to bodies already in the DB (no re-extraction, "
+             "seconds not minutes) — use after tuning the `validity:` rules",
+    )
+    p_extract.add_argument(
         "--config", default="config/football_queries.yaml",
         help="config YAML holding the `validity:` rules",
     )
@@ -221,6 +250,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="MinHash Jaccard similarity cutoff, 0..1 (default: 0.75)",
     )
     p_dedup.set_defaults(func=_dedup)
+
+    p_audit = sub.add_parser(
+        "audit",
+        help="LLM-assisted audit (L4): flag non-journalism candidates for human review",
+    )
+    p_audit.add_argument("--model", default="gemma4:e2b",
+                         help="Ollama model (default: gemma4:e2b — measured best here)")
+    p_audit.add_argument("--limit", type=int, default=300, help="sample size (default: 300)")
+    p_audit.add_argument("--scope", choices=["usable", "invalid", "all"], default="usable",
+                         help="audit what the filters kept ('usable') or rejected ('invalid')")
+    p_audit.add_argument("--reason", default=None,
+                         help="with --scope invalid: only this invalid_reason")
+    p_audit.add_argument("--title-like", default=None,
+                         help="extra SQL LIKE filter on the title, e.g. '%%preview%%'")
+    p_audit.add_argument("--out", default=None, help="write full results to this JSON file")
+    p_audit.add_argument("--chars", type=int, default=400,
+                         help="characters of body the model reads (default: 400)")
+    p_audit.set_defaults(func=_audit)
+
+    p_annot = sub.add_parser(
+        "annotate", help="blind human labelling, to validate the LLM classifier")
+    p_annot.add_argument("--input", default=None,
+                         help="JSON file from `corpus classify` (default: sample the corpus)")
+    p_annot.add_argument("--out", default="data/golden/label_validation.jsonl",
+                         help="where labels are appended (resumable)")
+    p_annot.add_argument("--limit", type=int, default=100, help="how many to show")
+    p_annot.add_argument("--chars", type=int, default=1600,
+                         help="characters of body to display (default: 1600)")
+    p_annot.set_defaults(func=_annotate)
 
     p_stats = sub.add_parser("stats", help="print a corpus health summary")
     p_stats.set_defaults(func=_stats)

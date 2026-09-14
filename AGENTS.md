@@ -205,28 +205,37 @@ be written honestly, the project isn't finished, no matter how much code exists.
 
 > Re-run these queries before trusting these numbers. They are a snapshot, not live state.
 
-**Headline: 26,378 usable articles**, full clean bodies, deduplicated, spanning
+**Headline: 25,215 usable articles**, full clean bodies, deduplicated, spanning
 **2024-08 → 2026-06 across 23 months** of even coverage.
 
 ```bash
 sqlite3 data/corpus.db "SELECT COUNT(*) total, SUM(body_full IS NOT NULL) with_body,
   SUM(body_valid=1 AND dup_of IS NULL) usable FROM articles;"
-# → 33594 | 28941 | 26378
+# → 33594 | 28941 | 25215   (verified 2026-09-13, after the LLM-audit cleanup)
 ```
 
 ### Source mix — deliberate, not accidental
 | Domain | Tier | Usable | Share |
 |---|---|---:|---:|
-| theguardian.com | reliable | 10,614 | 40.2% |
-| bbc.co.uk | reliable | 7,936 | 30.1% |
-| football365.com | tabloid | 1,984 | 7.5% |
-| 90min.com | tabloid | 1,851 | 7.0% |
-| teamtalk.com | tabloid | 1,644 | 6.2% |
-| fourfourtwo.com | tabloid | 1,510 | 5.7% |
-| skysports.com | reliable | 831 | 3.2% |
+| theguardian.com | reliable | 10,584 | 42.0% |
+| bbc.co.uk | reliable | 7,845 | 31.1% |
+| football365.com | tabloid | 1,977 | 7.8% |
+| 90min.com | tabloid | 1,847 | 7.3% |
+| teamtalk.com | tabloid | 1,641 | 6.5% |
+| skysports.com | reliable | 806 | 3.2% |
+| fourfourtwo.com | tabloid | 507 | 2.0% |
 | thisisanfield.com | tabloid | 7 | — |
 
-**reliable 19,381 (73.5%) · tabloid 6,982 (26.5%) · 15 rows with NULL tier.**
+**reliable 19,235 (76.3%) · tabloid 5,965 (23.7%) · 15 rows with NULL tier.**
+
+> **2026-09-13 non-journalism cleanup.** 1,068 template pages (TV/streaming listings,
+> match-preview templates, player hub pages, FPL tips, quizzes) were marked
+> `body_valid=0, invalid_reason='non_journalism'` — marked, never deleted. Rules live in
+> `validity.non_journalism_titles` in the config; `corpus extract --revalidate` re-applies
+> them to existing bodies in seconds without re-extracting. FourFourTwo shrank hardest
+> (1,510 → 770): it was the main source of streaming guides. Guardian's share *rose*
+> (40.2% → 41.7%) because the junk had been padding the denominator — the same
+> wrong-denominator error class as the earlier readiness-gate bug.
 
 **The tabloid tier is a feature, not noise.** Conflicting coverage of transfer sagas is
 what makes golden-set questions about *synthesis*, *temporal resolution*, and *source
@@ -274,6 +283,8 @@ All of it is reachable through the `corpus` console script (`pyproject.toml`
 | `dedup.py` | 160 | MinHash (128 perms) + LSH + union-find clustering; deterministic canonical election (valid → longest → earliest → lowest id); marks `dup_of`. |
 | `stats.py` | 201 | Corpus health funnel, loss accounting, domain concentration, temporal coverage, and the **Phase-2 readiness gates**. |
 | `smell.py` | 171 | Per-document anomaly battery — catches contamination that aggregate gates miss. |
+| `audit.py` | ~215 | **Discovery only.** Local LLM (Ollama) labels a sample ARTICLE/TEMPLATE to surface junk classes the lexical rules miss. Never writes to the corpus. Measured too imprecise to decide deletions — see its docstring for the numbers and why. |
+| `annotate.py` | ~140 | Blind terminal annotation (`a`/`t`/`s`/`q`), incremental + resumable. Built to validate `audit.py`; it is the prototype for the Phase-2 golden-set annotator. |
 | `cli.py` | 243 | The `corpus` command: `init, ingest, ingest-guardian, ingest-mediacloud, ingest-cc, fetch-cc, fetch, extract, dedup, stats, smell`. |
 
 **Quality verification ladder** (use it, in order): L1 aggregate gates (`stats`) → L2
@@ -342,7 +353,7 @@ Reviving ESPN would need Wayback or a JS-capable fetcher; deferred.
 
 ## 9. Known caveats and accepted exceptions
 
-- **Guardian is 40.2% of the usable corpus and FAILS the "no domain >40%" readiness gate.**
+- **Guardian is 42.0% of the usable corpus and FAILS the "no domain >40%" readiness gate.**
   The user decided on 2026-07-22 to **accept this deliberately** rather than pad the corpus,
   game the metric, or over-collect. `stats` still reports the honest FAIL. **This is a
   documented exception, not falsified data — do not "fix" it by changing the gate.**
@@ -353,12 +364,38 @@ Reviving ESPN would need Wayback or a JS-capable fetcher; deferred.
     one holds only while the top domain is still `theguardian.com` *and* its share is
     ≤42%. If a different domain dominates, or Guardian drifts higher, the gate blocks
     again and demands a new decision. Verified against all three scenarios.
+  - ⚠️ **Headroom is now 0.025pp** (41.975% vs the 42% ceiling). Removing ~6 more
+    non-Guardian rows trips the gate. This is the mechanism working: it forces a fresh
+    decision instead of letting concentration drift silently. **Do not widen the ceiling to make it
+    fit** — that is the gaming this whole mechanism exists to prevent. Either diversify
+    the corpus (more BBC/Sky/tabloid) or ask the user for a fresh, dated decision.
   - It is hardcoded rather than config-driven **on purpose**: accepting a gate should cost
     a reviewable code change, not a knob that is easy to turn when a number is
     inconvenient. Add an entry only after the user explicitly decides; record who and when.
 - 15 usable rows have a NULL `tier` (cosmetic; classify if convenient).
 
 ## 10. Hard-won operational lessons (do not relearn these)
+
+- **Not all corpus noise is equal — the test is "does it corrupt the measurement?"**
+  This is the principle that decides every future cleanup:
+
+  | Kind | Example | Effect | Action |
+  |---|---|---|---|
+  | **Distractor** | off-scope football (women's, AFCON), tabloid speculation | Competes plausibly and is *not* the answer → **tests precision** | **Keep** |
+  | **Inert** | TV listings, "<Player> News" hub pages | Answers nothing and doesn't look like an answer | Leave it |
+  | **Corrupting** | **near-duplicates**, bodies that are mostly nav chrome | Breaks the metric directly | **Fix** |
+
+  This retroactively explains which work paid off: dedup was essential (15 copies of the
+  right story score as 14 misses — the number lies about the system), template filtering
+  was not (inert, and removing it risked deleting real articles). A corpus where every
+  document is relevant makes `recall@k` meaningless — you need a haystack.
+
+- **Define the rubric before you measure agreement.** Two imperfect annotators who share
+  a rubric still give a useful number: their agreement is the ceiling any classifier can
+  meaningfully hit. Two annotators using *different* rubrics give noise. Our 18% "model
+  precision" was mostly the latter — the human was judging journalism-ness, extraction
+  quality and usefulness at once. This risk is far larger in Phase 2, where "is this
+  document *relevant* to this question?" is exactly as fuzzy.
 
 - **Retry-with-backoff is right for a transient blip and actively harmful under a sustained
   throttle** — each retry multiplies the load that caused the throttle. Use a **circuit

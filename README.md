@@ -8,7 +8,7 @@
 > The domain is a **configuration knob** (`config/football_queries.yaml`), so the same
 > machinery retargets to F1, cybersecurity, or anything else without touching the core.
 
-**Corpus today:** 26,378 usable articles · 2024-08 → 2026-06 · 73% reliable / 27% tabloid.
+**Corpus today:** 25,215 usable articles · 2024-08 → 2026-06 · 76% reliable / 24% tabloid.
 The tabloid tier is deliberate — conflicting coverage of transfer sagas is what makes
 questions about synthesis, temporal resolution, and source reliability possible.
 

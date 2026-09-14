@@ -3,11 +3,13 @@
 *.sqlite
 *.sqlite3
 01_data/
-# Ignore everything under data/ at any depth, except the golden set
-# (our own questions/annotations — safe to commit; never article bodies).
+# Ignore everything under data/ at any depth, except OUR OWN annotations — the golden
+# set and the audit labels. Those are questions/judgements we wrote, not article bodies.
 data/**
 !data/golden/
 !data/golden/**
+!data/audit/
+!data/audit/**
 cache/
 *.html.gz
 *.parquet

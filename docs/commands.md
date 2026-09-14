@@ -163,8 +163,10 @@ Equivalent module form, if you prefer: `uv run python -m newsrag.corpus.cli ...`
 | `init` | create the two SQLite DBs (corpus + HTML cache), schema only — **works today**, idempotent | — |
 | `ingest` | fetch GDELT headlines into the DB (metadata only), filtered by the source allowlist — **works today** | `--config <path>` (default `config/football_queries.yaml`) |
 | `fetch` | download HTML → cache (async, robots-aware) — **works today** | `--per-domain <N>` (def 3) · `--max-concurrency <N>` (def 15) · `--no-robots` · `--limit <N>` |
-| `extract` | cached HTML → full clean bodies — **works today** | `--reextract` (re-run on already-extracted) · `--config <path>` |
+| `extract` | cached HTML → full clean bodies — **works today** | `--reextract` (re-run extraction on already-extracted) · `--revalidate` (re-apply only the `validity:` rules to bodies already in the DB — seconds, no re-extraction; use after tuning a rule) · `--config <path>` |
 | `dedup` | detect + mark near-duplicates (`dup_of` → canonical) — **works today** | `--threshold <0..1>` (default 0.75) |
+| `audit` | LLM-assisted **discovery** of junk classes the lexical rules miss (local Ollama, never writes to the corpus) | `--model` (def `gemma4:e2b`) · `--limit` · `--chars <N>` (body chars the model reads, def 400) · `--scope usable\|invalid` · `--out <json>` |
+| `annotate` | blind human labelling in the terminal (`a`/`t`/`s`/`q`), incremental + resumable | `--input <json from audit>` · `--out <jsonl>` · `--limit` · `--chars <N>` (def 1600) |
 | `stats` | corpus health report + readiness gate for Phase 2 — **works today**, read-only, no network | — |
 
 **The config file** (`config/football_queries.yaml`) holds three knobs, all editable

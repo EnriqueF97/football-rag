@@ -179,6 +179,58 @@ validity:
     - substitute
     - sacked
 
+  # TITLE patterns marking a page as non-journalism: TV/streaming listings, match-preview
+  # templates, player hub pages, fantasy tips, quizzes. These answer no question — they
+  # would waste golden-set annotation time and show up as retrieval false positives.
+  # Matched as case-insensitive REGEX against the title (not the body).
+  # Decision 2026-09-13 (Enrique): mark all three classes. Verified precision first —
+  # the Guardian hits are real listings ("World Cup schedule today: How to watch…"),
+  # not false positives.
+  non_journalism_titles:
+    - "live stream" # "…: Live streams, TV details"
+    - "how to watch" # but see non_journalism_exemptions below
+    - "tv details"
+    - "tv info"
+    - "^watch " # "Watch Germany vs Slovakia: TV channels"
+    - "news and features$" # player hub/index pages, not articles
+    # Section hubs: "Arsenal Women Coverage", "Arne Slot Coverage" (found by `corpus
+    # audit`). Capped at 5 words: a bare "coverage$" also caught real headlines such as
+    # "Sky Sports launches 'multiview' in revamp of Premier League coverage" — 48 of them.
+    - "^(?:\\S+\\s+){0,4}coverage$"
+    - "\\bdream (?:xi|line-?up)" # hypothetical "dream XI" pieces, not reporting
+    # NOUN only: "Football quiz", "Champions League quizzes". Must NOT match the verb
+    # "quizzed" — "Ancelotti quizzed on Real Madrid's plans" is real journalism.
+    - "\\bquiz(?:zes)?\\b"
+    # NOTE: FPL intentionally beats "team of the week" — BBC's "FPL … team of the week"
+    # is fantasy-game advice, while a pundit's plain "Team of the Week" is real-football
+    # opinion and is KEPT (decision 2026-09-13).
+    - "\\bfpl\\b"
+    # Affiliate / sponsored promotions (found by `corpus audit`): VPN deals, Black Friday
+    # product roundups, last-minute ticket sales. Tight on purpose — 25 real promos, and
+    # verified not to touch ordinary reporting.
+    - "\\blast[- ]minute .{0,30}tickets?\\b"
+    - "\\d+\\s*%\\s*off\\b"
+    - "\\bvpn\\b"
+    - "\\bsecure your seat\\b"
+
+  # URL patterns. Currently empty on purpose. A "/competition/" rule looked obvious —
+  # `corpus audit` surfaced two affiliate posts filed there — but on inspection that path
+  # is FourFourTwo's *competitions section* (World Cup, Champions League), and the rule
+  # would have wrongly marked 327 real articles ("Crystal Palace charged over
+  # 'provocative' remarks", "Early Leeds team news as Farke makes changes"). Two examples
+  # are not a pattern: measure the whole set before trusting a rule.
+  non_journalism_urls: []
+
+  # Exemptions WIN over the patterns above. Decision 2026-09-13 (Enrique): match previews
+  # and prediction columns are journalism and stay in the corpus — they also create a
+  # genuinely hard evaluation case (a preview predicting "2-1" must not be mistaken for
+  # the actual result). football365 writes them as "X vs Y prediction, expected line-ups,
+  # how to watch and stats", so the incidental "how to watch" was wrongly marking them.
+  # "expected line-ups" is the discriminator: real previews carry it, TV guides never do.
+  # Verified: exempts 115 football365 previews, leaks 0 TV guides.
+  non_journalism_exemptions:
+    - "expected line-?ups?"
+
   # High-precision markers of a NON-article page. Kept short on purpose: an
   # over-eager list silently drops good articles, which is worse than a little noise.
   spam_phrases:

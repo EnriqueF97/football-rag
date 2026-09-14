@@ -20,6 +20,7 @@ import gzip
 import hashlib
 import re
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 
 import ftfy
@@ -99,10 +100,50 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(_normalize(text).encode("utf-8")).hexdigest()
 
 
-def is_valid_body(text: str | None, rules: dict) -> tuple[bool, str]:
-    """Is this a usable article body? Returns (valid, reason) — the reason feeds stats."""
+@lru_cache(maxsize=8)
+def _non_journalism_patterns(patterns: tuple[str, ...]) -> list[re.Pattern]:
+    """Compile the title patterns once (cached — this runs over tens of thousands of rows)."""
+    return [re.compile(p, re.IGNORECASE) for p in patterns]
+
+
+def is_non_journalism(title: str | None, url: str | None, rules: dict) -> bool:
+    """Is this a template page rather than journalism?
+
+    TV/streaming listings, section and player hub pages, affiliate/sponsored posts,
+    fantasy tips and quizzes answer no question: they waste golden-set annotation time
+    and surface as retrieval false positives. All patterns live in the config — see
+    `validity.non_journalism_titles`, `_urls` and `_exemptions`.
+
+    Order matters: **exemptions win**. A phrase can appear in both a template and a real
+    article ("how to watch" shows up in TV guides *and* in football365's match previews),
+    so a positive marker of journalism overrides the junk match.
+    """
+    exemptions = tuple(rules.get("non_journalism_exemptions") or ())
+    if title and any(p.search(title) for p in _non_journalism_patterns(exemptions)):
+        return False
+    if title:
+        title_pats = tuple(rules.get("non_journalism_titles") or ())
+        if any(p.search(title) for p in _non_journalism_patterns(title_pats)):
+            return True
+    if url:
+        url_pats = tuple(rules.get("non_journalism_urls") or ())
+        if any(p.search(url) for p in _non_journalism_patterns(url_pats)):
+            return True
+    return False
+
+
+def is_valid_body(
+    text: str | None, rules: dict, title: str | None = None, url: str | None = None
+) -> tuple[bool, str]:
+    """Is this a usable article? Returns (valid, reason) — the reason feeds `stats`.
+
+    `title`/`url` are optional so existing callers keep working, but pass them when you
+    have them: the non-journalism check needs both.
+    """
     if not text:
         return False, "empty"
+    if is_non_journalism(title, url, rules):
+        return False, "non_journalism"
     if len(text) < rules["min_chars"]:
         return False, "too_short"
     low = text.lower()
@@ -113,6 +154,44 @@ def is_valid_body(text: str | None, rules: dict) -> tuple[bool, str]:
     if hits < rules["min_keyword_hits"]:
         return False, "off_topic"
     return True, "ok"
+
+
+def revalidate(
+    db_path=db.DEFAULT_DB_PATH,
+    config_path: str | Path = DEFAULT_CONFIG,
+) -> dict:
+    """Re-apply the validity rules to bodies already in the DB — no re-extraction.
+
+    Tuning a validity rule should be cheap. This re-runs `is_valid_body` over existing
+    `body_full` values (never touching trafilatura or the HTML cache), so a rule change
+    costs seconds instead of a full re-extract. Reversible: it only rewrites
+    `body_valid` / `invalid_reason`, so relaxing a rule and re-running restores rows.
+    """
+    rules = load_rules(config_path)
+    conn = db.connect(db_path)
+    tally: Counter = Counter()
+    try:
+        rows = conn.execute(
+            "SELECT id, title, url, body_full, body_valid FROM articles "
+            "WHERE body_full IS NOT NULL"
+        ).fetchall()
+        updates, changed = [], 0
+        for article_id, title, url, body, was_valid in rows:
+            valid, reason = is_valid_body(body, rules, title, url)
+            tally[reason] += 1
+            if int(valid) != (was_valid or 0):
+                changed += 1
+            updates.append((int(valid), None if valid else reason, article_id))
+        conn.executemany(
+            "UPDATE articles SET body_valid = ?, invalid_reason = ? WHERE id = ?", updates
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    print(f"revalidated: {len(rows)}  |  changed: {changed}")
+    print(f"outcomes: {dict(tally)}")
+    return dict(tally)
 
 
 def extract(
@@ -127,7 +206,7 @@ def extract(
     cache_conn = db.connect(cache_path)
     tally: Counter = Counter()
     try:
-        sql = "SELECT id, url FROM articles"
+        sql = "SELECT id, url, title FROM articles"
         if not reextract:
             sql += " WHERE body_full IS NULL"
         rows = conn.execute(sql).fetchall()
@@ -138,7 +217,7 @@ def extract(
         )
 
         updates = []
-        for article_id, url in rows:
+        for article_id, url, title in rows:
             blob = cached.get(url)
             if blob is None:
                 tally["no_cached_200"] += 1
@@ -150,7 +229,7 @@ def extract(
                 tally["extract_failed"] += 1
                 continue
             body = strip_boilerplate(ftfy.fix_text(body))
-            valid, reason = is_valid_body(body, rules)
+            valid, reason = is_valid_body(body, rules, title, url)
             tally[reason] += 1
             updates.append(
                 (
