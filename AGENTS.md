@@ -33,6 +33,8 @@ When updating §5, **run the queries in that section against the live DB**. Numb
 this file must be measured, never remembered or estimated. Date-stamp what you verify.
 
 Companion documents (keep consistent with this one):
+- **`WORKING_AGREEMENT.md` — how to collaborate and the code-quality bar. Read it before
+  writing code; it is project-agnostic and it overrides §3 here if they ever disagree.**
 - `project_progress.md` — the granular phase/sub-task checklist and % completion.
 - `README.md` — what the system is, how it's measured, and the repository map.
 - `docs/commands.md` — every command with its flags explained.
@@ -142,31 +144,26 @@ defend in an interview and reuse at work:
   history.
 
 ### Working language and level
-- **Speak Spanish to him by default.** All code, docs, and commits in **English**.
-- He is an engineer: explain at a technical level, don't oversimplify. But do **not**
-  assume he knows RAG/IR-specific concepts — teach those the first time they come up
-  (recall@k, cross-encoder, MinHash, BM25…).
+See `WORKING_AGREEMENT.md` §1. The project-specific part: the concepts to teach on first
+use here are RAG/IR ones — recall@k, nDCG, cross-encoder, BM25, MinHash, groundedness.
 
 ## 3. How to work with him (this matters most)
 
-Build **together, step by step**. Do **not** write a whole subsystem end to end while he
-watches. The rhythm:
+📌 **Read [`WORKING_AGREEMENT.md`](WORKING_AGREEMENT.md) before writing any code.** It is
+the authority on collaboration style, the code-quality bar, and what is his call rather
+than yours. It is deliberately project-agnostic so he can reuse it elsewhere — do not
+duplicate its contents here, and if the two ever conflict, it wins.
 
-1. **Discuss the design** of the next piece before writing it. Name options and
-   tradeoffs; give a recommendation.
-2. **He makes the call.** Surface choices, don't railroad.
-3. **Implement one small, reviewable piece.**
-4. **Explain what it does and why**, so he understands the component before moving on.
-5. **Next piece.**
+The one thing worth repeating because it is easy to violate by reflex:
 
-Also:
-- **Teach, don't just deliver.**
-- **Committing is HIS job** unless he explicitly asks otherwise.
-- **All Python dependencies go through `uv`.** Never bare `pip`.
+> **He writes the implementations. You scaffold and review.** Signatures, docstrings, step
+> comments and hints are yours; function bodies are his. Write a full implementation only
+> when he explicitly asks. Review like a supervisor sitting beside him: point at the line,
+> name why it matters, suggest a direction — never silently rewrite his code.
+
+Project-specific additions to that agreement:
 - **Keep `project_progress.md` current** (checkboxes + %), and **this file** (see the
-  standing rule).
-- **Report honestly.** If something failed, was skipped, or is unverified, say so with the
-  evidence. Never claim a step works until it has actually been run. Verified > assumed.
+  standing rule above).
 
 ## 4. Where we are — status and roadmap
 
