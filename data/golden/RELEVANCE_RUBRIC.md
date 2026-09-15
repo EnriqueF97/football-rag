@@ -75,7 +75,7 @@ one that most inflates `recall@k` into nonsense.
 | Outlets disagree, question asks the **actual** figure | judge each | Only the correct one is 2; the wrong report is 0 — unless the question is about the reporting. |
 | **Preview predicting** a result; question asks the **actual** result | **0** | A prediction is not a fact. Never confuse forecast with outcome. |
 | Published **after** the question's `as_of` date | **0** | Temporal questions are answered with what existed then. See below. |
-| Near-duplicate of a document you already marked | **same level** | Annotate the canonical (`dup_of IS NULL`); its twins inherit. Never mark one copy and skip its identical sibling — that silently breaks `recall@k`. |
+| The document is a near-duplicate (`dup_of IS NOT NULL`) | **don't annotate it** | Annotate the canonical it points to, and only that one. Twins are excluded from the usable corpus, so they are never indexed and can never be retrieved — annotating one records a hit that cannot happen and silently depresses `recall@k`. |
 | Contains the answer but is factually wrong | **2** | Relevance is "does it contain the claimed answer", not "is the world correct". Note it in `notes` if it matters. |
 | Answers a *different* question about the same event | **0** | Re-read the question you actually wrote. |
 

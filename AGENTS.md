@@ -291,12 +291,21 @@ Cleaning is always deterministic (regex/filters).**
 
 ## 7. The code still to be built
 
-Both packages exist but are **empty except for `__init__.py`**.
+`rag/` is **empty except for `__init__.py`**. In `eval/`, `golden.py` is written (see
+below); the rest is still to come.
+
+> ⚠️ **Binding constraint on everything indexed.** Chunking and embedding must select on
+> the usable predicate — `body_valid = 1 AND dup_of IS NULL` (`smell.py::_USABLE`) — never
+> over `articles` wholesale. The golden set annotates **canonical documents only**, on the
+> premise that near-duplicates are never indexed and so can never be retrieved. Index the
+> twins and that premise breaks: every annotation becomes an under-count, silently and
+> uniformly across all configurations. `eval/golden.py::_check_docs` enforces the golden-set
+> half of this; nothing yet enforces the indexing half.
 
 ### `src/newsrag/rag/` — Phases 3–4
 | Planned module | Purpose |
 |---|---|
-| `chunk.py` | Split bodies into chunks; `fixed` vs `semantic` strategies (an ablation axis). Populates the empty `chunks` table with char offsets for exact-passage citation. |
+| `chunk.py` | Split bodies into chunks; `fixed` vs `semantic` strategies (an ablation axis). Populates the empty `chunks` table with char offsets for exact-passage citation. **Must filter on `_USABLE`** — see the constraint above. |
 | `embed.py` | sentence-transformers embeddings, cached locally. |
 | `index.py` | Vector store (FAISS/Chroma) + BM25 index. |
 | `retrieve.py` | Dense, BM25, and hybrid fusion — the headline ablation. |
@@ -306,7 +315,7 @@ Both packages exist but are **empty except for `__init__.py`**.
 ### `src/newsrag/eval/` — Phase 5 (the thesis)
 | Planned module | Purpose |
 |---|---|
-| `golden.py` | Load/validate the golden set. |
+| `golden.py` | **Written.** `GoldenItem`/`ValidationReport` schema, `load()` (JSONL, fails loudly with file:line), `validate()` (rubric rules: ids, types, relevance levels, answerable vs unanswerable, `as_of`), `_check_docs()` (corpus-backed: existence, canonicality, `body_valid`). Verified against `data/corpus.db`. |
 | `retrieval_metrics.py` | recall@k, MRR, nDCG. |
 | `generation_metrics.py` | Groundedness, citation accuracy, abstention. |
 | `judge.py` | LLM judge **plus its validation against human annotation** — an unvalidated judge is not evidence. |
@@ -394,6 +403,15 @@ Reviving ESPN would need Wayback or a JS-capable fetcher; deferred.
   quality and usefulness at once. This risk is far larger in Phase 2, where "is this
   document *relevant* to this question?" is exactly as fuzzy.
 
+- **A validator that encodes two rules can encode two *contradictory* rules, and only data
+  reveals it.** `_check_docs` originally had both "a near-duplicate must not be annotated"
+  (error) and "a canonical's twins must also be annotated" (warning). Every unit-style
+  example had one twin or none, so both passed. Run against a real 10-member cluster
+  (BBC republishing one Milner story across ten club pages), no annotation could satisfy
+  both: annotating the twins produced nine errors, omitting them produced a warning. The
+  resolution came from a convention already in the codebase — `_USABLE` excludes twins
+  everywhere, so only canonicals are annotated. **When two rules in one checker disagree,
+  the tie-breaker is what the rest of the system already does, not which rule reads better.**
 - **Retry-with-backoff is right for a transient blip and actively harmful under a sustained
   throttle** — each retry multiplies the load that caused the throttle. Use a **circuit
   breaker**: stop after N consecutive failures instead of digging deeper. Applied to both

@@ -16,13 +16,13 @@
 
 ---
 
-## Overall completion: **20%**
+## Overall completion: **25%**
 
 | # | Phase | Weight | Local % | Status |
 |---|-------|:------:|:-------:|--------|
 | 0 | Project scaffolding | 5% | 100% | ✅ done |
 | 1 | Corpus construction (fix + harden the scraper) | 15% | 100% | ✅ done — 26.4k usable, audited & cleaned; 3/4 gates PASS, Guardian 40.2% **accepted** (deliberate) |
-| 2 | Golden evaluation set | 20% | 0% | not started |
+| 2 | Golden evaluation set | 20% | ~25% | 🔨 in progress — design (2.1) complete |
 | 3 | Retrieval core (chunk · embed · index · hybrid) | 15% | 0% | not started |
 | 4 | Generation + citations | 8% | 0% | not started |
 | 5 | Evaluation harness | 17% | 0% | not started |
@@ -376,19 +376,40 @@ audited; Guardian 40.2% accepted. Reliable 73% / tabloid 27%. ESPN's 4,622 stay 
 
 ---
 
-## Phase 2 — Golden evaluation set · weight 20% · **0%**
+## Phase 2 — Golden evaluation set · weight 20% · **~25%** (2.1 design complete)
 
 *Goal: ~150 questions with reference answers **and annotated relevant document IDs**.
 The boring part nobody does; the entire thesis. Build it early — it constrains every
 downstream choice.*
 
 ### 2.1 Design
-- [ ] **2.1.1** Define question taxonomy: factual · numeric · temporal ·
-      multi-doc · **unanswerable** (for abstention) · post-cutoff (anti-memory)
-- [ ] **2.1.2** Define the relevance rubric — what counts as a "relevant" doc vs.
-      merely "related". Write it down; annotators (you) must be consistent.
-- [ ] **2.1.3** Define the golden-set JSON schema (question, answer, relevant_ids,
-      type, difficulty, date_asof)
+- [x] **2.1.1** Question taxonomy agreed (6 types, with target mix):
+      **factual simple** + **causal/explanatory** ~40% (the base) · **temporal** +
+      **contradictory-sources** ~30% (what makes this corpus distinctive) ·
+      **multi-document** ~20% · **unanswerable** ~10% (measures abstention).
+      Verified the corpus supports them: 13,996 Premier League articles over 23 months
+      (median 591/month), and **838 day-club combinations covered by ≥3 outlets** — the
+      raw material for multi-doc and contradictory questions. Need ~45 of those; have 838.
+- [x] **2.1.2** **Relevance rubric written** → `data/golden/RELEVANCE_RUBRIC.md`, shipped
+      with the dataset (labels are uninterpretable without the rule that produced them).
+      Graded 0/1/2 rather than binary, because nDCG uses graded relevance and because
+      multi-doc questions have no single document holding the whole answer.
+      Key content: one operational test per level; an explicit "what you are NOT judging"
+      list (quality, extraction, usefulness, topic) — the three criteria that collapsed
+      the 1.11 annotation task; boundary cases decided in advance (preview-vs-result,
+      as_of dates, near-duplicate inheritance); and a self-consistency check whose score
+      is the ceiling any system can be measured against.
+- [x] **2.1.3** Schema + **validator** in `src/newsrag/eval/golden.py` (first module of
+      the eval package). Fields: `id · type · question · reference_answer ·
+      relevant_docs[{doc_id, level}] · as_of · difficulty · source_doc_id · drafted_by ·
+      reviewed_by · notes · created_at`.
+      Decisions: only levels 1–2 stored (absence = 0); annotation is at **document**
+      level, not chunk, so the golden set survives chunking-strategy ablations;
+      `source_doc_id` is the audit trail proving each question was written *from* the
+      corpus; `drafted_by` records LLM assistance honestly instead of hiding it.
+      `validate()` enforces the rubric mechanically — verified it catches a missing
+      `as_of`, a non-canonical doc id, a duplicate question id, and **un-annotated
+      near-duplicate twins** (the silent `recall@k` killer).
 
 ### 2.2 Draft (LLM-assisted, human-owned)
 - [ ] **2.2.1** Sample candidate docs across time/domains for coverage
