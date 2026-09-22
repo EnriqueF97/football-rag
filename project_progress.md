@@ -407,9 +407,11 @@ downstream choice.*
       level, not chunk, so the golden set survives chunking-strategy ablations;
       `source_doc_id` is the audit trail proving each question was written *from* the
       corpus; `drafted_by` records LLM assistance honestly instead of hiding it.
-      `validate()` enforces the rubric mechanically — verified it catches a missing
-      `as_of`, a non-canonical doc id, a duplicate question id, and **un-annotated
-      near-duplicate twins** (the silent `recall@k` killer).
+      `validate()` enforces the rubric mechanically — verified against `data/corpus.db`
+      that it catches a missing `as_of`, an illegal relevance level, a duplicate question
+      id, a doc id absent from the corpus, an unusable body, and **a non-canonical doc id**
+      (the silent `recall@k` killer: only `body_valid = 1 AND dup_of IS NULL` is ever
+      indexed, so an annotated twin is a hit that can never happen).
 
 ### 2.2 Draft (LLM-assisted, human-owned)
 - [ ] **2.2.1** Sample candidate docs across time/domains for coverage
@@ -418,10 +420,26 @@ downstream choice.*
 - [ ] **2.2.4** Deliberately bias toward memory-proof questions (recent, numeric,
       specific) so the set measures *retrieval*, not the model's weights
 
-### 2.3 Relevance annotation
-- [ ] **2.3.1** For each question, annotate the relevant document ID(s)
-- [ ] **2.3.2** Cross-check against near-dup clusters — a relevant doc's twins must be
-      handled consistently or recall@k is measuring noise (ties Phase 1.5 to eval)
+### 2.3 Relevance annotation — **pooled, in two rounds** (decided 2026-09-21)
+*Finding every document that answers a question **is** retrieval, so a complete annotation
+cannot be produced before Phase 3 exists. Standard IR practice (TREC) is **pooling**: run
+several retrievers, union their top-k, annotate the union. We do that rather than pooling
+with SQLite FTS5 now — a lexical-only pool surfaces documents that share words with the
+question but not meaning, and it would bias the set toward BM25, which is one of the
+systems under test.*
+
+- [ ] **2.3.1a** Round 1 (now): annotate `source_doc_id` — the document each question was
+      written from — as the level-2 anchor. Every question is answerable by construction.
+- [ ] **2.3.1b** Round 2 (after Phase 3): pool the top-k of dense + BM25 + hybrid, annotate
+      only the newly surfaced candidates, and record how many level-2 documents round 2
+      added. **That delta is a reportable number** — it measures how incomplete a
+      single-anchor golden set is, which almost no portfolio project quantifies.
+- [ ] **2.3.1c** Re-run `validate()` after each round; `recall@k` from round 1 is
+      provisional and must be labelled as such wherever it appears.
+- [x] **2.3.2** Near-duplicate policy settled: **annotate the canonical only**. Twins are
+      outside `_USABLE` so they are never indexed; annotating one is an unreachable hit.
+      Enforced as an error by `golden.py::_check_docs`. Binds Phase 3 — chunking and
+      embedding must select on `_USABLE` or the premise breaks (see AGENTS §7).
 
 ### 2.4 Contamination baseline
 - [ ] **2.4.1** Run **closed-book** (no retrieval) over the whole set
@@ -572,6 +590,51 @@ place — not a wrapper around the core.*
 - [ ] **9.1** Agent decides whether to retrieve at all
 - [ ] **9.2** Query reformulation on weak retrieval
 - [ ] **9.3** Explicit "I don't know" path; measure abstention lift vs. Phase 5.4
+
+---
+
+## Track C — Google Cloud Platform · cross-cutting · **0%**
+
+*A secondary learning goal added 2026-09-21: working GCP experience. **Rule: a service
+earns its place by doing real work.** Bolted-on cloud is worse than none — a reviewer who
+knows GCP can tell, and "we used BigQuery for 3,000 rows" reads as cargo cult. Where a
+service is used for learning rather than necessity, the README says so.*
+
+**Before creating any resource: set a project budget alert.** The trial credit runs out
+quietly. Verify current pricing directly — never from memory.
+
+### C.1 Cloud Storage — corpus durability *(do first; solves a problem we have today)*
+- [ ] **C.1.1** Bucket + service account + least-privilege IAM role
+- [ ] **C.1.2** `corpus push` / `corpus pull` — versioned snapshots of `corpus.db` (188 MB)
+      and the HTML cache (1.8 GB), both git-ignored and currently existing on **one laptop
+      only**. Common Crawl indexes rotate and Media Cloud results drift, so parts of the
+      corpus are not re-scrapeable: this is real data loss exposure, not a hypothetical.
+- [ ] **C.1.3** Lifecycle rule on old snapshots; make the README's "rebuild from scratch"
+      claim actually true
+- **Note:** SQLite is a *local-file* database. The snapshot is pulled down and queried
+      locally — we do **not** query it in place over the network (see AGENTS §12).
+
+### C.2 Cloud Run Jobs — parallel ablation grid *(Phase 5; the strongest piece)*
+- [ ] **C.2.1** Containerise the eval harness; push to Artifact Registry
+- [ ] **C.2.2** API keys via Secret Manager, never baked into the image
+- [ ] **C.2.3** Run the config × question grid as a task array; **record serial vs parallel
+      wall-clock** — the point is a measured number, not the deployment
+
+### C.3 Cloud Run service — serve the RAG endpoint *(Phase 6)*
+- [ ] **C.3.1** Containerised query API, autoscaling to zero
+- [ ] **C.3.2** **Cold-start latency measured and reported** — it feeds Phase 7 directly
+
+### C.4 Optional, honestly labelled
+- [ ] **C.4.1** Cloud Scheduler + Cloud Run Job: nightly Guardian pull (cheap, real)
+- [ ] **C.4.2** BigQuery + Looker Studio over eval results — **not justified by data
+      volume** (~3,000 rows). A learning exercise; the README must say so.
+- [ ] **C.4.3** Evaluate serving Phase 4 generation through Vertex AI (availability and
+      region support to be confirmed, not assumed)
+
+### ⛔ Deliberately excluded
+- **Vertex AI Vector Search** — the index endpoint bills **hourly whether queried or
+  not**. FAISS locally, or `pgvector` on Cloud SQL if the store must be remote.
+- **GKE / Dataflow** — nothing here needs Kubernetes or distributed data processing.
 
 ---
 
