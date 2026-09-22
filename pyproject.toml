@@ -8,6 +8,7 @@ dependencies = [
     "beautifulsoup4>=4.15.0",
     "datasketch>=2.0.0",
     "ftfy>=6.3.1",
+    "google-cloud-storage>=3.14.1",
     "httpx>=0.28.1",
     "mediacloud>=4.0.0",
     "pandas>=3.0.3",

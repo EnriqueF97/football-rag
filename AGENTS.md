@@ -443,3 +443,29 @@ Reviving ESPN would need Wayback or a JS-capable fetcher; deferred.
 - The **one committed data artifact** is `data/golden/` — our own questions and annotations.
 - Sources are public and licensing-safe. The fetcher honours `robots.txt` and caps
   concurrency per host.
+- **A private cloud bucket is not publication.** Snapshotting the corpus to GCS (Track C)
+  is backup, not redistribution — so the bucket stays private, never public-read. The
+  git rule is unchanged: bodies never enter the repo.
+
+## 12. Google Cloud Platform (Track C, added 2026-09-21)
+
+A secondary learning goal: working GCP experience for the user's CV. The full plan lives
+in `project_progress.md` → **Track C**; this section holds the rules that bind code.
+
+- **A service earns its place by doing real work.** Bolted-on cloud is worse than none —
+  a reviewer who knows GCP reads it as cargo cult. Where something is used for learning
+  rather than necessity (BigQuery over ~3,000 result rows, for instance), **the README
+  says so.** Honesty about that is worth more than the service.
+- **SQLite is a local-file database.** The GCS snapshot is *pulled down and queried
+  locally*. Do **not** query the `.db` in place over the network, and do **not** reach for
+  a GCS FUSE mount: SQLite's locking assumes POSIX semantics that object storage does not
+  provide, and a writer over FUSE risks corrupting the file. If remote querying is ever
+  genuinely needed, that is a migration to Cloud SQL, not a mount.
+- **Secrets via Secret Manager**, never baked into an image or committed. `.env` stays
+  git-ignored.
+- **Budget alert before the first resource.** Verify pricing directly; never quote it from
+  memory.
+- ⛔ **Vertex AI Vector Search is excluded** — its index endpoint bills hourly whether
+  queried or not, which is the standard surprise bill. FAISS locally, or `pgvector` on
+  Cloud SQL if the store must be remote. ⛔ **No GKE or Dataflow** — nothing here needs
+  Kubernetes or distributed data processing.
