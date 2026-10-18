@@ -38,6 +38,9 @@ Companion documents (keep consistent with this one):
 - `project_progress.md` — the granular phase/sub-task checklist and % completion.
 - `README.md` — what the system is, how it's measured, and the repository map.
 - `docs/commands.md` — every command with its flags explained.
+- `docs/learning_plan_agents.md` — my learning plan for building agents and programming with
+  agents, mapped onto the phases. It does not change the phase order; it marks the places
+  where a change would be my decision (e.g. pulling Phase 9 forward).
 
 ---
 
@@ -167,13 +170,13 @@ Project-specific additions to that agreement:
 
 ## 4. Where we are — status and roadmap
 
-**Overall completion: 20%.** Phase 1 (corpus) finished 2026-07-22.
+**Overall completion: 25%.** Phase 1 (corpus) finished 2026-07-22.
 
 | # | Phase | Weight | Status |
 |---|---|:---:|---|
 | 0 | Project scaffolding | 5% | ✅ done |
-| 1 | Corpus construction | 15% | ✅ done — 26,378 usable articles |
-| 2 | **Golden evaluation set** | 20% | ⬜ **NEXT — the biggest single phase** |
+| 1 | Corpus construction | 15% | ✅ done — 25,215 usable articles |
+| 2 | **Golden evaluation set** | 20% | 🟨 **IN PROGRESS — 2.1 design + tooling done; 5 of ~150 questions written (2026-10-17)** |
 | 3 | Retrieval core (chunk · embed · index · hybrid) | 15% | ⬜ not started |
 | 4 | Generation + citations | 8% | ⬜ not started |
 | 5 | Evaluation harness | 17% | ⬜ not started |
@@ -284,6 +287,16 @@ All of it is reachable through the `corpus` console script (`pyproject.toml`
 | `annotate.py` | ~140 | Blind terminal annotation (`a`/`t`/`s`/`q`), incremental + resumable. Built to validate `audit.py`; it is the prototype for the Phase-2 golden-set annotator. |
 | `cli.py` | 243 | The `corpus` command: `init, ingest, ingest-guardian, ingest-mediacloud, ingest-cc, fetch-cc, fetch, extract, dedup, stats, smell`. |
 
+### §6b. `src/newsrag/eval/` — Phase 2 tooling, written
+
+| File | Lines | Purpose |
+|---|---:|---|
+| `golden.py` | 356 | `GoldenItem` / `ValidationReport` schema, `load()` (JSONL, fails loudly with `file:line`), `validate()` (rubric rules), `_check_docs()` (corpus-backed: existence, canonicality, `body_valid`, **no relevant doc published after `as_of`**). `_is_iso_date()` enforces strict `YYYY-MM-DD` via a parse + round-trip — `date.fromisoformat` alone accepts `"20241124"` and `"2024-W47-7"` on Python ≥3.11. Both date checks added 2026-10-17 after 2 of the first 6 hand-written questions shipped a malformed or wrong-year `as_of` that the validator could not see. Verified against the live DB. |
+| `draft.py` | 151 | `sample_docs()` — stratified over **(month, domain)**, 138 buckets, seeded and reproducible, round-robin so Guardian's 42% share does not become the golden set's shape. `used_source_ids()` feeds `exclude=` so repeated sessions hand over new material. Verified: exact counts, exhaustion guard, reproducibility, no duplicates, 138/138 buckets at n=150. |
+
+`src/newsrag/corpus/remote.py` (258 lines) is **scaffolded but unimplemented** — GCS
+snapshot push/pull (Track C). Inert until a bucket exists; see §12.
+
 **Quality verification ladder** (use it, in order): L1 aggregate gates (`stats`) → L2
 per-document smell tests (`smell`) → L3 random-sample human read → L4 LLM-labelled audit →
 L5 task-based. **Rule: an LLM may LABEL for auditing, but must NEVER rewrite body text.
@@ -291,8 +304,8 @@ Cleaning is always deterministic (regex/filters).**
 
 ## 7. The code still to be built
 
-`rag/` is **empty except for `__init__.py`**. In `eval/`, `golden.py` is written (see
-below); the rest is still to come.
+`rag/` is **empty except for `__init__.py`**. In `eval/`, `golden.py` and `draft.py` are
+written (see §6b); the rest is still to come.
 
 > ⚠️ **Binding constraint on everything indexed.** Chunking and embedding must select on
 > the usable predicate — `body_valid = 1 AND dup_of IS NULL` (`smell.py::_USABLE`) — never

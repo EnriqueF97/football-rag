@@ -414,9 +414,17 @@ downstream choice.*
       indexed, so an annotated twin is a hit that can never happen).
 
 ### 2.2 Draft (LLM-assisted, human-owned)
-- [ ] **2.2.1** Sample candidate docs across time/domains for coverage
-- [ ] **2.2.2** LLM proposes candidate Q/A pairs grounded in specific docs
-- [ ] **2.2.3** **Human review every item** — this is the annotation, not a rubber stamp
+- [x] **2.2.1** Sample candidate docs across time/domains for coverage →
+      `eval/draft.py::sample_docs` — stratified over (month, domain), 138 buckets, seeded,
+      round-robin; `used_source_ids()` excludes documents already written from.
+- [ ] **2.2.2** Draft Q/A pairs — **in progress: 5 written (2026-10-17)**, by hand from
+      sampled docs; 2 carry `drafted_by: "llm"` where the wording was Claude's (honest
+      provenance). Mix so far: temporal 3 · factual 1 · causal 1 — temporal is already
+      over target; multi_doc and contradictory still at 0. Whether a local Ollama model
+      drafts (D1) is still open.
+- [ ] **2.2.3** **Human review every item** — this is the annotation, not a rubber stamp.
+      `validate()` now also enforces strict ISO `as_of` and "no relevant doc published
+      after `as_of`" — both added after real errors in the first 6 questions.
 - [ ] **2.2.4** Deliberately bias toward memory-proof questions (recent, numeric,
       specific) so the set measures *retrieval*, not the model's weights
 

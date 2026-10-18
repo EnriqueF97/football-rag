@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 DEFAULT_PATH = Path("data/golden/golden_set.jsonl")
@@ -121,6 +122,36 @@ class ValidationReport:
         Expected: errors=[] -> True   ·   errors=["..."] -> False   (warnings ignored)
         """
         return not self.errors
+
+
+def _is_iso_date(value: str) -> bool:
+    """True only for a strict ``YYYY-MM-DD`` string.
+
+    Strict matters because `as_of` is later compared to ``published_at`` **as text** —
+    ISO dates sort chronologically as strings, so no parsing is needed downstream. That
+    only holds if every value has exactly this shape. Two traps, both found in real data
+    or verified on this interpreter (Python 3.13):
+
+    * ``" 2024-11-24"`` — a stray space. A space sorts before every digit, so this value
+      would compare as earlier than any real date.
+    * ``"20241124"`` and ``"2024-W47-7"`` — since Python 3.11, ``date.fromisoformat``
+      **accepts** both. Parsing alone is not enough.
+
+    Expected:
+        "2024-11-24"  -> True
+        " 2024-11-24" -> False      (ValueError from fromisoformat)
+        "2024-8-11"   -> False      (ValueError from fromisoformat)
+        "20241124"    -> False      (parses, but is not the canonical form)
+    """
+
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return False
+
+    # Round-trip: isoformat() always yields the canonical form, so any other accepted
+    # spelling ("20241124") fails the comparison.
+    return parsed.isoformat() == value
 
 
 def load(path: str | Path = DEFAULT_PATH) -> list[GoldenItem]:
@@ -248,6 +279,12 @@ def validate(items: list[GoldenItem], conn=None) -> ValidationReport:
             rep.warnings.append(
                 f"{where} as_of date detected in no temporal question, probably wrong type"
             )
+        # Checked whatever the type: a malformed date breaks Phase-3 time filtering
+        # silently. !r makes a stray space visible in the message.
+        if it.as_of is not None and not _is_iso_date(it.as_of):
+            rep.errors.append(
+                f"{where} as_of {it.as_of!r} is not a strict YYYY-MM-DD date"
+            )
 
         # --- 5. Corpus-backed checks -------------------------------------------------
         if conn is not None:
@@ -270,24 +307,31 @@ def _check_docs(conn, it: GoldenItem, rep: ValidationReport) -> None:
         it:   the item to check.
         rep:  report to append messages to.
 
+    The relevance rubric also says a document published **after** a question's `as_of`
+    is level 0: temporal questions are answered with what existed then, or time-filtered
+    retrieval becomes unmeasurable. Annotating such a document as relevant contradicts
+    the rubric, so it is an error.
+
     Expected:
         doc id not in the corpus -> errors   += ["[q4] doc 999 does not exist"]
         doc is a near-duplicate  -> errors   += ["[q4] doc 27 is a near-duplicate of 17 …"]
         body_valid = 0           -> warnings += ["[q4] doc 32 has no valid body …"]
+        published after as_of    -> errors   += ["[q4] doc 26743 published 2025-09-08, after as_of 2024-09-25 …"]
     """
     where = f"[{it.id}]"
 
-    # Every annotated document must exist, be canonical, and be usable.
+    # Every annotated document must exist, be canonical, be usable, and predate `as_of`.
     for doc_id in it.doc_ids():
         row = conn.execute(
-            "SELECT body_valid, dup_of FROM articles WHERE id = ?", (doc_id,)
+            "SELECT body_valid, dup_of, published_at FROM articles WHERE id = ?",
+            (doc_id,),
         ).fetchone()
 
         if row is None:
             rep.errors.append(f"{where} doc {doc_id} does not exist in the corpus")
             continue
 
-        body_valid, dup_of = row
+        body_valid, dup_of, published_at = row
 
         if dup_of is not None:
             rep.errors.append(
@@ -300,3 +344,13 @@ def _check_docs(conn, it: GoldenItem, rep: ValidationReport) -> None:
                 f"return it and recall@k is capped below 1.0"
             )
 
+        # The rubric makes a document published after `as_of` level 0. A malformed as_of
+        # is skipped here — validate() already reports it. Strict ISO on both sides makes
+        # the string comparison chronological; same-day publication is allowed.
+        if it.as_of is not None and _is_iso_date(it.as_of) and published_at is not None:
+            pub_day = published_at[:10]
+            if pub_day > it.as_of:
+                rep.errors.append(
+                    f"{where} doc {doc_id} published {pub_day}, after as_of {it.as_of}; "
+                    f"per the rubric it is level 0 — drop it or fix as_of"
+                )
