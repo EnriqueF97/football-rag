@@ -420,8 +420,23 @@ downstream choice.*
 - [ ] **2.2.2** Draft Q/A pairs — **in progress: 5 written (2026-10-17)**, by hand from
       sampled docs; 2 carry `drafted_by: "llm"` where the wording was Claude's (honest
       provenance). Mix so far: temporal 3 · factual 1 · causal 1 — temporal is already
-      over target; multi_doc and contradictory still at 0. Whether a local Ollama model
-      drafts (D1) is still open.
+      over target; multi_doc and contradictory still at 0.
+      **D1 decided 2026-10-18:** a Sonnet-class Claude model drafts via the API; the human
+      approves / rejects / edits every item in a review tool (workflow in AGENTS §7).
+  - [x] **2.2.2a** `sample_bundles()` — same-story groups for multi_doc / contradictory.
+        Written by Claude at the user's request (2026-10-18); 4-day blocks, ≥3 outlets,
+        stratified by club; 1,034 qualifying bundles
+  - [x] **2.2.2a'** `related_docs(doc_id)` — agent tool to explore around a seed article:
+        same club(s), ±4 days, closest first, capped at 15. Written by Claude at the
+        user's request (2026-10-18)
+  - [ ] **2.2.2b** Drafting call: structured output + verbatim evidence quote per doc,
+        candidates to `data/candidates/` (git-ignored)
+  - [ ] **2.2.2c** Deterministic grounding check — every quote must occur in its doc body
+  - [ ] **2.2.2d** Review tool: candidate + evidence in context, approve/reject/edit,
+        append approved items to `golden_set.jsonl`, log the approve/edit/reject rates
+  - [x] **2.2.2e** Pipeline vs agent → **agent** (user's decision, 2026-10-18): it uses
+        the user's own tools (`sample_docs`, `sample_bundles`, `get_docs`, `validate`) and
+        writes candidates, never `golden_set.jsonl` directly
 - [ ] **2.2.3** **Human review every item** — this is the annotation, not a rubber stamp.
       `validate()` now also enforces strict ISO `as_of` and "no relevant doc published
       after `as_of`" — both added after real errors in the first 6 questions.

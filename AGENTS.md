@@ -292,7 +292,7 @@ All of it is reachable through the `corpus` console script (`pyproject.toml`
 | File | Lines | Purpose |
 |---|---:|---|
 | `golden.py` | 356 | `GoldenItem` / `ValidationReport` schema, `load()` (JSONL, fails loudly with `file:line`), `validate()` (rubric rules), `_check_docs()` (corpus-backed: existence, canonicality, `body_valid`, **no relevant doc published after `as_of`**). `_is_iso_date()` enforces strict `YYYY-MM-DD` via a parse + round-trip — `date.fromisoformat` alone accepts `"20241124"` and `"2024-W47-7"` on Python ≥3.11. Both date checks added 2026-10-17 after 2 of the first 6 hand-written questions shipped a malformed or wrong-year `as_of` that the validator could not see. Verified against the live DB. |
-| `draft.py` | 151 | `sample_docs()` — stratified over **(month, domain)**, 138 buckets, seeded and reproducible, round-robin so Guardian's 42% share does not become the golden set's shape. `used_source_ids()` feeds `exclude=` so repeated sessions hand over new material. Verified: exact counts, exhaustion guard, reproducibility, no duplicates, 138/138 buckets at n=150. |
+| `draft.py` | 151 | `sample_docs()` — stratified over **(month, domain)**, 138 buckets, seeded and reproducible, round-robin so Guardian's 42% share does not become the golden set's shape. `used_source_ids()` feeds `exclude=` so repeated sessions hand over new material. Verified: exact counts, exhaustion guard, reproducibility, no duplicates, 138/138 buckets at n=150. **`sample_bundles()` written 2026-10-18** (implemented by Claude at the user's explicit request): groups documents by (club in headline, 4-day block), keeps groups with ≥3 outlets, stratifies across clubs — input for `multi_doc`/`contradictory`. Verified: 1,034 qualifying bundles; first 20 come from 20 different clubs; reproducible per seed; exclude honoured; exhaustion guard. Both sampling queries now `ORDER BY id` — SQL guarantees no row order otherwise, and a seeded shuffle is only reproducible over a fixed input order (no change to today's output, verified). `CLUB_ALIASES`, `_clubs_in()` and `get_docs()` are written and verified. **`related_docs(doc_id, days=4, limit=15)` written 2026-10-18** (by Claude at the user's request): same-club documents within ±days of a seed, closest first (`(days_apart, doc_id)` key, so deterministic), capped — lets the agent follow a thread without a free-text search tool (which would act as a retriever and bias `relevant_docs`). Verified: seeded on the Ten Hag sacking it recovers 59 docs spanning 24/10–01/11, the story a fixed block splits; invalid id raises; club-less headline returns `[]`. |
 
 `src/newsrag/corpus/remote.py` (258 lines) is **scaffolded but unimplemented** — GCS
 snapshot push/pull (Track C). Inert until a bucket exists; see §12.
@@ -339,6 +339,39 @@ written (see §6b); the rest is still to come.
 The **one data artifact committed to git** (our own questions, not article text). Target
 ~150 questions, each with a reference answer **and annotated relevant document IDs** — that
 third field is what makes retrieval measurable at all.
+
+**Drafting workflow — decided 2026-10-18 (closes "D1").** After writing the first 5 items by
+hand, the user decided an LLM drafts and a human approves:
+
+```
+sample_docs / sample_bundles  ->  LLM drafts (structured JSON + verbatim evidence quotes)
+  ->  data/candidates/*.jsonl  (staging; git-ignored via data/**)
+  ->  human review tool: approve / reject / edit, evidence shown in context
+  ->  data/golden/golden_set.jsonl  (only approved items; drafted_by="llm", reviewed_by="human")
+```
+
+- **Model:** a Sonnet-class Claude model via the Anthropic API — the user's call: not
+  local Ollama (measured weak in `audit.py`), not Haiku (judged too weak for synthesis).
+  Exact model id and pricing are pinned at implementation, never quoted from memory.
+- **The human review is the annotation, not a rubber stamp.** Measure and report the
+  approve / edit / reject rates — that number is what proves the review was real.
+- **Grounding check:** every draft must quote, per document, a verbatim span supporting
+  the reference answer; code verifies the span occurs in that document's body before the
+  draft reaches review. `validate()` cannot detect a hallucinated answer; this can.
+- **Contamination:** Claude drafts and a same-family model later answers. The closed-book
+  baseline (2.4) is now the central measurement of that, and the README must say so.
+- **Article bodies leave the machine** when sent to the API (unlike `audit.py`, which is
+  local). Public news, but stated.
+- **Candidates never go in `data/golden/`** — that folder is committed, and candidates
+  carry article quotes.
+- **Agent, not pipeline — decided by the user 2026-10-18.** A tool-using agent gets the
+  *same tools the user would use* — `sample_docs`, `sample_bundles`, `get_docs`,
+  `validate` — chooses and relates articles itself, and writes candidates; the user audits.
+  (The recommendation on record had been pipeline-first; the user chose the agent, which
+  also serves his agent-building learning plan.) Consequence: the functions in
+  `eval/draft.py` are the agent's toolbox, so their docstrings double as tool
+  descriptions. Caveat kept on record: any search tool the agent is later given acts as
+  a retriever and can bias which documents count as relevant — prefer the bundle tools.
 
 **Design constraint — gradable ≠ structured.** Questions must be **text-native**: *why* a
 manager was sacked, what a club's statement said, what fee was reported and by whom,
