@@ -294,6 +294,21 @@ All of it is reachable through the `corpus` console script (`pyproject.toml`
 | `golden.py` | 356 | `GoldenItem` / `ValidationReport` schema, `load()` (JSONL, fails loudly with `file:line`), `validate()` (rubric rules), `_check_docs()` (corpus-backed: existence, canonicality, `body_valid`, **no relevant doc published after `as_of`**). `_is_iso_date()` enforces strict `YYYY-MM-DD` via a parse + round-trip — `date.fromisoformat` alone accepts `"20241124"` and `"2024-W47-7"` on Python ≥3.11. Both date checks added 2026-10-17 after 2 of the first 6 hand-written questions shipped a malformed or wrong-year `as_of` that the validator could not see. Verified against the live DB. |
 | `draft.py` | 151 | `sample_docs()` — stratified over **(month, domain)**, 138 buckets, seeded and reproducible, round-robin so Guardian's 42% share does not become the golden set's shape. `used_source_ids()` feeds `exclude=` so repeated sessions hand over new material. Verified: exact counts, exhaustion guard, reproducibility, no duplicates, 138/138 buckets at n=150. **`sample_bundles()` written 2026-10-18** (implemented by Claude at the user's explicit request): groups documents by (club in headline, 4-day block), keeps groups with ≥3 outlets, stratifies across clubs — input for `multi_doc`/`contradictory`. Verified: 1,034 qualifying bundles; first 20 come from 20 different clubs; reproducible per seed; exclude honoured; exhaustion guard. Both sampling queries now `ORDER BY id` — SQL guarantees no row order otherwise, and a seeded shuffle is only reproducible over a fixed input order (no change to today's output, verified). `CLUB_ALIASES`, `_clubs_in()` and `get_docs()` are written and verified. **`related_docs(doc_id, days=4, limit=15)` written 2026-10-18** (by Claude at the user's request): same-club documents within ±days of a seed, closest first (`(days_apart, doc_id)` key, so deterministic), capped — lets the agent follow a thread without a free-text search tool (which would act as a retriever and bias `relevant_docs`). Verified: seeded on the Ten Hag sacking it recovers 59 docs spanning 24/10–01/11, the story a fixed block splits; invalid id raises; club-less headline returns `[]`. |
 
+| `cli.py` | 493 | **The `golden` console script** (2026-10-19, written by Claude at the user's request, part by part): `sample-docs`, `sample-bundles`, `related`, `get`, `submit` — the terminal face of the tools above, so the `golden-drafter` subagent and the human use the same ones. Contract: one JSON object on stdout, `"ok"` + `"errors"`, exit code mirrors ok — argparse errors rerouted to honour it. Reading is two-step (previews, then `get`) to keep the agent's context lean. `submit` is the **only** write path to `data/candidates/`: schema → `validate()` → evidence shape → grounding → source-not-reused, all errors reported in one pass; ids and provenance (`drafted_by="llm"`, `reviewed_by=""`) set by code, never by the drafter. **`_check_grounding()`** (written by Claude at the user's request, 2026-10-19) answers only "does this quote exist in the article?" — never "does it support the answer?" or "is the answer true?", which the human judges at audit with the quote highlighted. A quote passes if, after `_normalise` on both sides (curly→straight quotes, en/em dash→hyphen, `…`→`...`, NBSP→space, any whitespace run→one space; case kept), it is a **contiguous** substring of the body and ≥25 chars. Look-alike set chosen by measurement over the usable bodies (curly quotes 0% — ftfy strips them — en dash 42%, `…` 16%, NBSP 5%). Paraphrases and `...`-stitched quotes fail by design; two passages = two evidence entries. Verified on real articles in both directions for each look-alike. Commands documented in `docs/commands.md` §5b. |
+
+**`.claude/agents/golden-drafter.md`** (127 lines, 2026-10-19, committed with the repo so
+every clone gets the same agent): the drafting subagent. Frontmatter `tools: Bash, Read`,
+`model: sonnet` — no Write/Edit, so `golden submit` is its only sanctioned write path (Bash
+could still write; the prompt's Boundaries section and `git status` are what contain it).
+Sections: why the golden set matters → the `golden` tools → procedure (sample, scan, `get`
+the full text, submit by heredoc, fix-or-drop after two failures, rotate `--seed`, stop
+after three empty rounds rather than lower the bar) → what makes a good question (reads
+`RELEVANCE_RUBRIC.md`, which wins on conflict; five types — **no `unanswerable`**, those
+are human-written; six rules, each with its reason and a real bad→fixed example from
+the first hand-written items) → evidence rules matching `_check_grounding` exactly →
+boundaries → a fixed final-report format including skip reasons. Prompt style: reasons
+over rules, no all-caps imperatives. **Not yet run.**
+
 `src/newsrag/corpus/remote.py` (258 lines) is **scaffolded but unimplemented** — GCS
 snapshot push/pull (Track C). Inert until a bucket exists; see §12.
 
@@ -350,9 +365,15 @@ sample_docs / sample_bundles  ->  LLM drafts (structured JSON + verbatim evidenc
   ->  data/golden/golden_set.jsonl  (only approved items; drafted_by="llm", reviewed_by="human")
 ```
 
-- **Model:** a Sonnet-class Claude model via the Anthropic API — the user's call: not
-  local Ollama (measured weak in `audit.py`), not Haiku (judged too weak for synthesis).
-  Exact model id and pricing are pinned at implementation, never quoted from memory.
+- **Model and harness — revised 2026-10-19:** a Sonnet model running **inside Claude Code
+  as a subagent** (`.claude/agents/golden-drafter.md`), **not** a hand-written loop
+  against the Anthropic API. The user's call: he wants a model with a ready-made harness,
+  not to program one. Consequences: no API key and no `anthropic` dependency; usage comes
+  out of his Claude Code plan, so there is no per-run dollar figure to compute; the
+  agent's tools are **terminal commands** (a `golden` CLI over `eval/draft.py` and
+  `eval/golden.py`) rather than Python functions; and its restriction to those commands
+  is by instruction, not enforcement — `git status` is the backstop. Not local Ollama
+  (measured weak in `audit.py`), not Haiku (judged too weak for synthesis).
 - **The human review is the annotation, not a rubber stamp.** Measure and report the
   approve / edit / reject rates — that number is what proves the review was real.
 - **Grounding check:** every draft must quote, per document, a verbatim span supporting
@@ -360,8 +381,8 @@ sample_docs / sample_bundles  ->  LLM drafts (structured JSON + verbatim evidenc
   draft reaches review. `validate()` cannot detect a hallucinated answer; this can.
 - **Contamination:** Claude drafts and a same-family model later answers. The closed-book
   baseline (2.4) is now the central measurement of that, and the README must say so.
-- **Article bodies leave the machine** when sent to the API (unlike `audit.py`, which is
-  local). Public news, but stated.
+- **Article bodies leave the machine** — Claude Code sends what the subagent reads to the
+  model (unlike `audit.py`, which is local). Public news, but stated.
 - **Candidates never go in `data/golden/`** — that folder is committed, and candidates
   carry article quotes.
 - **Agent, not pipeline — decided by the user 2026-10-18.** A tool-using agent gets the

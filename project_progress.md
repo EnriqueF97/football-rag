@@ -421,17 +421,26 @@ downstream choice.*
       sampled docs; 2 carry `drafted_by: "llm"` where the wording was Claude's (honest
       provenance). Mix so far: temporal 3 · factual 1 · causal 1 — temporal is already
       over target; multi_doc and contradictory still at 0.
-      **D1 decided 2026-10-18:** a Sonnet-class Claude model drafts via the API; the human
-      approves / rejects / edits every item in a review tool (workflow in AGENTS §7).
+      **D1 decided 2026-10-18, revised 2026-10-19:** a Sonnet model drafts as a **Claude
+      Code subagent** (not via the API — no key, no SDK); the human approves / rejects /
+      edits every item in a review tool (workflow in AGENTS §7).
   - [x] **2.2.2a** `sample_bundles()` — same-story groups for multi_doc / contradictory.
         Written by Claude at the user's request (2026-10-18); 4-day blocks, ≥3 outlets,
         stratified by club; 1,034 qualifying bundles
   - [x] **2.2.2a'** `related_docs(doc_id)` — agent tool to explore around a seed article:
         same club(s), ±4 days, closest first, capped at 15. Written by Claude at the
         user's request (2026-10-18)
-  - [ ] **2.2.2b** Drafting call: structured output + verbatim evidence quote per doc,
-        candidates to `data/candidates/` (git-ignored)
-  - [ ] **2.2.2c** Deterministic grounding check — every quote must occur in its doc body
+  - [x] **2.2.2b** `golden` CLI exposing the tools as terminal commands (`sample-docs`,
+        `sample-bundles`, `related`, `get`, `submit`) with JSON output; `submit` is the only
+        write path, to `data/candidates/` (git-ignored). Written 2026-10-19
+        (`eval/cli.py`); all paths verified from the terminal except `_check_grounding`
+  - [x] **2.2.2b'** Subagent definition `.claude/agents/golden-drafter.md` (model: sonnet):
+        rubric, question types, quality rules, procedure — written 2026-10-19, not yet run
+  - [ ] **2.2.2b''** First trial run: 2-3 candidates, read the report and the candidates,
+        tune the prompt before any larger batch
+  - [x] **2.2.2c** Deterministic grounding check — every quote must occur in its doc body
+        (`cli.py::_check_grounding`, 2026-10-19): existence only, after typographic
+        normalisation; truth and support stay with the human auditor
   - [ ] **2.2.2d** Review tool: candidate + evidence in context, approve/reject/edit,
         append approved items to `golden_set.jsonl`, log the approve/edit/reject rates
   - [x] **2.2.2e** Pipeline vs agent → **agent** (user's decision, 2026-10-18): it uses
