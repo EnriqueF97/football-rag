@@ -196,6 +196,28 @@ without touching code:
 
 ---
 
+## 5b. CLI (`golden` console script — Phase 2 golden-set tools)
+
+The terminal face of `eval/draft.py` and `eval/golden.py`, used by the human **and** by
+the `golden-drafter` Claude Code subagent — literally the same tools. Run from the project
+root. **Every command prints exactly one JSON object** with `"ok": true/false`; on
+`false`, `"errors"` lists what to fix, and the exit code is 1. Bad flags follow the same
+contract (argparse errors are rerouted). `golden <cmd> --help` is the per-command manual.
+
+| Command | Does | Key flags |
+|---|---|---|
+| `uv run golden sample-docs` | single articles spread across months × outlets — **titles + 300-char preview**; for factual / causal / temporal | `--n 5`, `--seed 0` |
+| `uv run golden sample-bundles` | groups on the same club + 4-day block from ≥3 outlets — titles only; for multi_doc / contradictory | `--n 3`, `--block-days 4`, `--min-domains 3` |
+| `uv run golden related DOC_ID` | same-club articles within ±days, closest first — titles only; follow a story | `--days 4`, `--limit 15` |
+| `uv run golden get ID [ID ...]` | **full bodies** — the only step with enough text to write a question; any missing id fails the call | — |
+| `uv run golden submit FILE` (or `-` for stdin) | checks a candidate (schema, `validate()`, evidence shape, grounding, source not reused) and appends it to `data/candidates/<batch>.jsonl` **only if all pass**; reports every error at once | `--batch NAME` (one per parallel agent) |
+
+Reading is two-step on purpose: sampling shows previews, `get` shows full text — every
+printed character stays in the agent's context. Sampling excludes the sources of both the
+golden set and all candidates (pending, approved or rejected).
+
+---
+
 ## 6. Secrets
 
 ```bash
