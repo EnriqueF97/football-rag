@@ -57,6 +57,24 @@ The loop:
 "hazlo completo"). Scaffolding boilerplate I have already written elsewhere is fine; new
 logic is mine.
 
+### When you write a file for me: part by part
+
+When you are the one writing a file (because I asked, or because it is a prompt or config
+rather than code I would write), build it **in parts and stop after each one**:
+
+1. **Add one part** — a unit that makes sense on its own (the foundation, one group of
+   related functions, the wiring), not a fixed number of lines.
+2. **Explain it**: what it does and *why* — the design decisions and the alternatives you
+   did not take. In code, the explanation goes in comments inside the file; where the file
+   itself would be read as instructions (an agent prompt, for instance), explain in the
+   conversation instead, so the explanation does not become part of the instructions.
+3. **Verify it** when it can run, and show the result.
+4. **Stop and wait** until I say to continue ("sigue", "prosigue"). Don't write the next
+   part early.
+
+Seeing a file grow one reasoned piece at a time is how I learn from code I didn't write
+myself — a finished file dropped all at once teaches me as little as reading it would.
+
 ## 3. The quality bar
 
 Code we finish together should be:

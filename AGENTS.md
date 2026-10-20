@@ -479,6 +479,11 @@ Reviving ESPN would need Wayback or a JS-capable fetcher; deferred.
   resolution came from a convention already in the codebase — `_USABLE` excludes twins
   everywhere, so only canonicals are annotated. **When two rules in one checker disagree,
   the tie-breaker is what the rest of the system already does, not which rule reads better.**
+- **Claude Code loads `.claude/agents/` only when a session starts.** A subagent defined
+  mid-session is invisible to it ("Agent type '…' not found") until the session restarts.
+  Hit on 2026-10-19 with `golden-drafter`. Create agent files at the start of a session,
+  or plan a restart before the first run — and do not substitute a general-purpose agent
+  told to "follow the file": it has every tool, so it does not test the real boundaries.
 - **Retry-with-backoff is right for a transient blip and actively harmful under a sustained
   throttle** — each retry multiplies the load that caused the throttle. Use a **circuit
   breaker**: stop after N consecutive failures instead of digging deeper. Applied to both
