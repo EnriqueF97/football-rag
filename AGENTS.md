@@ -291,12 +291,12 @@ All of it is reachable through the `corpus` console script (`pyproject.toml`
 
 | File | Lines | Purpose |
 |---|---:|---|
-| `golden.py` | 356 | `GoldenItem` / `ValidationReport` schema, `load()` (JSONL, fails loudly with `file:line`), `validate()` (rubric rules), `_check_docs()` (corpus-backed: existence, canonicality, `body_valid`, **no relevant doc published after `as_of`**). `_is_iso_date()` enforces strict `YYYY-MM-DD` via a parse + round-trip — `date.fromisoformat` alone accepts `"20241124"` and `"2024-W47-7"` on Python ≥3.11. Both date checks added 2026-10-17 after 2 of the first 6 hand-written questions shipped a malformed or wrong-year `as_of` that the validator could not see. Verified against the live DB. |
+| `golden.py` | 365 | `GoldenItem` / `ValidationReport` schema, `load()` (JSONL, fails loudly with `file:line`), `validate()` (rubric rules), `_check_docs()` (corpus-backed: existence, canonicality, `body_valid`, **no relevant doc published after `as_of`**). **`as_of` is allowed on any question type** (2026-10-20, after trial-1): `type` says how many articles an answer needs, time-dependence is a separate axis, so the old "as_of on a non-temporal question → wrong type?" warning was removed; instead a question whose text says "as of" while `as_of` is empty warns. "In late November 2024, what did X say?" needs no as_of (what was said never changes); "As of <date>, what was reported…?" does (later articles change what was known). `_is_iso_date()` enforces strict `YYYY-MM-DD` via a parse + round-trip — `date.fromisoformat` alone accepts `"20241124"` and `"2024-W47-7"` on Python ≥3.11. Both date checks added 2026-10-17 after 2 of the first 6 hand-written questions shipped a malformed or wrong-year `as_of` that the validator could not see. Verified against the live DB. |
 | `draft.py` | 151 | `sample_docs()` — stratified over **(month, domain)**, 138 buckets, seeded and reproducible, round-robin so Guardian's 42% share does not become the golden set's shape. `used_source_ids()` feeds `exclude=` so repeated sessions hand over new material. Verified: exact counts, exhaustion guard, reproducibility, no duplicates, 138/138 buckets at n=150. **`sample_bundles()` written 2026-10-18** (implemented by Claude at the user's explicit request): groups documents by (club in headline, 4-day block), keeps groups with ≥3 outlets, stratifies across clubs — input for `multi_doc`/`contradictory`. Verified: 1,034 qualifying bundles; first 20 come from 20 different clubs; reproducible per seed; exclude honoured; exhaustion guard. Both sampling queries now `ORDER BY id` — SQL guarantees no row order otherwise, and a seeded shuffle is only reproducible over a fixed input order (no change to today's output, verified). `CLUB_ALIASES`, `_clubs_in()` and `get_docs()` are written and verified. **`related_docs(doc_id, days=4, limit=15)` written 2026-10-18** (by Claude at the user's request): same-club documents within ±days of a seed, closest first (`(days_apart, doc_id)` key, so deterministic), capped — lets the agent follow a thread without a free-text search tool (which would act as a retriever and bias `relevant_docs`). Verified: seeded on the Ten Hag sacking it recovers 59 docs spanning 24/10–01/11, the story a fixed block splits; invalid id raises; club-less headline returns `[]`. |
 
-| `cli.py` | 493 | **The `golden` console script** (2026-10-19, written by Claude at the user's request, part by part): `sample-docs`, `sample-bundles`, `related`, `get`, `submit` — the terminal face of the tools above, so the `golden-drafter` subagent and the human use the same ones. Contract: one JSON object on stdout, `"ok"` + `"errors"`, exit code mirrors ok — argparse errors rerouted to honour it. Reading is two-step (previews, then `get`) to keep the agent's context lean. `submit` is the **only** write path to `data/candidates/`: schema → `validate()` → evidence shape → grounding → source-not-reused, all errors reported in one pass; ids and provenance (`drafted_by="llm"`, `reviewed_by=""`) set by code, never by the drafter. **`_check_grounding()`** (written by Claude at the user's request, 2026-10-19) answers only "does this quote exist in the article?" — never "does it support the answer?" or "is the answer true?", which the human judges at audit with the quote highlighted. A quote passes if, after `_normalise` on both sides (curly→straight quotes, en/em dash→hyphen, `…`→`...`, NBSP→space, any whitespace run→one space; case kept), it is a **contiguous** substring of the body and ≥25 chars. Look-alike set chosen by measurement over the usable bodies (curly quotes 0% — ftfy strips them — en dash 42%, `…` 16%, NBSP 5%). Paraphrases and `...`-stitched quotes fail by design; two passages = two evidence entries. Verified on real articles in both directions for each look-alike. Commands documented in `docs/commands.md` §5b. |
+| `cli.py` | 512 | **The `golden` console script** (2026-10-19, written by Claude at the user's request, part by part): `sample-docs`, `sample-bundles`, `related`, `get`, `submit` — the terminal face of the tools above, so the `golden-drafter` subagent and the human use the same ones. Contract: one JSON object on stdout, `"ok"` + `"errors"`, exit code mirrors ok — argparse errors rerouted to honour it. Reading is two-step (previews, then `get`) to keep the agent's context lean. `submit` is the **only** write path to `data/candidates/`: schema → `validate()` → evidence shape → grounding → source-not-reused, all errors reported in one pass; **warnings block too** (2026-10-20) unless `--allow-warnings` is passed with a non-empty `notes` — a candidate saved with a warning could never be fixed, because saving marks its source article as used; ids and provenance (`drafted_by="llm"`, `reviewed_by=""`) set by code, never by the drafter. **`_check_grounding()`** (written by Claude at the user's request, 2026-10-19) answers only "does this quote exist in the article?" — never "does it support the answer?" or "is the answer true?", which the human judges at audit with the quote highlighted. A quote passes if, after `_normalise` on both sides (curly→straight quotes, en/em dash→hyphen, `…`→`...`, NBSP→space, any whitespace run→one space; case kept), it is a **contiguous** substring of the body and ≥25 chars. Look-alike set chosen by measurement over the usable bodies (curly quotes 0% — ftfy strips them — en dash 42%, `…` 16%, NBSP 5%). Paraphrases and `...`-stitched quotes fail by design; two passages = two evidence entries. Verified on real articles in both directions for each look-alike. Commands documented in `docs/commands.md` §5b. |
 
-**`.claude/agents/golden-drafter.md`** (127 lines, 2026-10-19, committed with the repo so
+**`.claude/agents/golden-drafter.md`** (132 lines, 2026-10-19, tuned 2026-10-20, committed with the repo so
 every clone gets the same agent): the drafting subagent. Frontmatter `tools: Bash, Read`,
 `model: sonnet` — no Write/Edit, so `golden submit` is its only sanctioned write path (Bash
 could still write; the prompt's Boundaries section and `git status` are what contain it).
@@ -307,7 +307,33 @@ after three empty rounds rather than lower the bar) → what makes a good questi
 are human-written; six rules, each with its reason and a real bad→fixed example from
 the first hand-written items) → evidence rules matching `_check_grounding` exactly →
 boundaries → a fixed final-report format including skip reasons. Prompt style: reasons
-over rules, no all-caps imperatives. **Not yet run.**
+over rules, no all-caps imperatives. **First run 2026-10-20 (batch `trial-1`, 1 causal +
+1 multi_doc):** both candidates passed `golden submit` first try, tree clean afterwards
+(it stayed inside `data/candidates/`), 11 sources skipped with reasons. Not yet audited by
+the user. Observed: `multi_doc` is the hard type — most bundles are redundant coverage
+where one article already answers.
+
+**Review of trial-1 (2026-10-20), verified against the articles.** The causal item (doc
+1919) is faithful and keeps the source's hedge, but its question copies the article's
+phrasing ("brought to an early close"). The multi_doc item (Bellamy's Wales contract,
+BBC 59379 + Sky 60563) has correct facts and complete annotation — the only other doc with
+the £700,000 clause, BBC 59598, is dated 1 June, after the question's date — but three
+flaws: (1) "As of 30 April 2026" in the text with `as_of` empty, which the agent did *by
+following the prompt* (as_of was described as temporal-only); (2) it calls the contract a
+"barrier", which Sky never does; (3) it staples two unrelated details rather than
+following a story. **The user keeps that candidate in `trial-1.jsonl` undecided.**
+Resulting changes, each tied to an observed problem: validator (as_of on any type; "as of"
+without as_of warns), `submit` (warnings block unless `--allow-warnings` + notes), and the
+prompt — as_of for any time-bound question, what a good `multi_doc` is (a story across
+articles, not stapled facts), the "barrier" case under the premise rule, a **new rule 7:
+ask in your own words** (copied phrasing favours keyword search, one of the systems under
+test), and how to handle warnings. **Next: `trial-2`**, including one `contradictory`
+— the agent spotted Guardian reporting Parker's unbeaten run as 33 games where Sky/BBC
+say 31.
+
+Who edited docs during trial-1: the *main* session that launched the agent (per the
+standing rule), not the subagent, which has no Edit/Write tool — confirmed from the
+session transcript. Sessions should say plainly when they update these files.
 
 `src/newsrag/corpus/remote.py` (258 lines) is **scaffolded but unimplemented** — GCS
 snapshot push/pull (Track C). Inert until a bucket exists; see §12.

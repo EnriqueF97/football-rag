@@ -341,6 +341,13 @@ def _submit(args: argparse.Namespace) -> int:
 
     The two exceptions stop early, because nothing after them is meaningful: JSON that
     does not parse, and fields that do not fit the schema at all.
+
+    WARNINGS BLOCK TOO, BUT CAN BE OVERRIDDEN. A warning flags something that is usually
+    a mistake (a question saying "as of" with no as_of set, found in trial-1). If warnings
+    were saved silently, the drafter could never fix them: a saved candidate marks its
+    source article as used, so a corrected resubmission would be rejected. So warnings
+    stop the submission like errors, and `--allow-warnings` saves anyway — only with a
+    non-empty `notes` saying why, so the auditor sees the warning AND the reason.
     """
     from newsrag.eval.golden import GoldenItem, validate
 
@@ -370,6 +377,15 @@ def _submit(args: argparse.Namespace) -> int:
         errors.append(f"doc {item.source_doc_id} was already used as the source of another "
                       f"question or candidate — pick a different article")
 
+    if report.warnings and not args.allow_warnings:
+        errors += [f"warning: {w}" for w in report.warnings]
+        errors.append("warnings block a submission too: fix them and resubmit, or — only "
+                      "if the choice was deliberate — explain why in notes and resubmit "
+                      "with --allow-warnings")
+    elif report.warnings and not item.notes.strip():
+        errors.append("--allow-warnings needs a reason: say in notes why each warning is "
+                      "deliberate")
+
     if errors:
         _fail(errors)
 
@@ -383,7 +399,7 @@ def _submit(args: argparse.Namespace) -> int:
         "submitted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         **{k: v for k, v in vars(item).items() if k != "id"},
         "evidence": evidence,
-        "warnings": report.warnings,      # advisory: shown to the auditor, not blocking
+        "warnings": report.warnings,      # only via --allow-warnings; the reason is in notes
     }
     CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
     path = CANDIDATES_DIR / f"{args.batch or date.today().isoformat()}.jsonl"
@@ -476,6 +492,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("source",
                    help='candidate JSON file, or "-" to read it from stdin (heredoc)')
+    p.add_argument("--allow-warnings", action="store_true",
+                   help="save despite validator warnings — only when the flagged choice is "
+                        "deliberate, and only with notes explaining why")
     p.add_argument("--batch", default=None,
                    help="candidates file name, without .jsonl (default: today's date); "
                         "give each parallel agent its own")

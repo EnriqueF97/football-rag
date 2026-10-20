@@ -210,7 +210,7 @@ contract (argparse errors are rerouted). `golden <cmd> --help` is the per-comman
 | `uv run golden sample-bundles` | groups on the same club + 4-day block from ≥3 outlets — titles only; for multi_doc / contradictory | `--n 3`, `--block-days 4`, `--min-domains 3` |
 | `uv run golden related DOC_ID` | same-club articles within ±days, closest first — titles only; follow a story | `--days 4`, `--limit 15` |
 | `uv run golden get ID [ID ...]` | **full bodies** — the only step with enough text to write a question; any missing id fails the call | — |
-| `uv run golden submit FILE` (or `-` for stdin) | checks a candidate (schema, `validate()`, evidence shape, grounding, source not reused) and appends it to `data/candidates/<batch>.jsonl` **only if all pass**; reports every error at once | `--batch NAME` (one per parallel agent) |
+| `uv run golden submit FILE` (or `-` for stdin) | checks a candidate (schema, `validate()`, evidence shape, grounding, source not reused) and appends it to `data/candidates/<batch>.jsonl` **only if all pass**; reports every error at once. **Warnings block too** (a saved candidate marks its source used, so it could not be fixed afterwards) | `--batch NAME` (one per parallel agent) · `--allow-warnings` (save anyway; requires `notes` explaining why) |
 
 Reading is two-step on purpose: sampling shows previews, `get` shows full text — every
 printed character stays in the agent's context. Sampling excludes the sources of both the

@@ -436,8 +436,13 @@ downstream choice.*
         (`eval/cli.py`); all paths verified from the terminal except `_check_grounding`
   - [x] **2.2.2b'** Subagent definition `.claude/agents/golden-drafter.md` (model: sonnet):
         rubric, question types, quality rules, procedure — written 2026-10-19, not yet run
-  - [ ] **2.2.2b''** First trial run: 2-3 candidates, read the report and the candidates,
-        tune the prompt before any larger batch
+  - [x] **2.2.2b''** First trial run (`trial-1`, 2026-10-20): 2 of 2 accepted, no submit
+        failures, tree clean. Reviewed against the articles; three observed problems
+        (`as_of` limited to temporal, copied phrasing, a stapled multi_doc with a framing
+        the source never used) → validator, `submit` and prompt tuned (AGENTS §6b).
+        The multi_doc candidate stays in `trial-1.jsonl`, undecided.
+  - [ ] **2.2.2b'''** `trial-2`: confirm the tuning holds; include 1 `contradictory`
+        (lead: Parker's unbeaten run, 33 games per Guardian vs 31 per Sky/BBC)
   - [x] **2.2.2c** Deterministic grounding check — every quote must occur in its doc body
         (`cli.py::_check_grounding`, 2026-10-19): existence only, after typographic
         normalisation; truth and support stay with the human auditor

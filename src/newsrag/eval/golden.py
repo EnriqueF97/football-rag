@@ -44,6 +44,7 @@ Schema decisions, each with its reason:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -80,7 +81,7 @@ class GoldenItem:
     question: str
     reference_answer: str
     relevant_docs: list[dict]  # [{"doc_id": int, "level": 1|2}]
-    as_of: str | None = None  # YYYY-MM-DD, required when type == "temporal"
+    as_of: str | None = None  # YYYY-MM-DD; required for "temporal", allowed on any time-bound question
     difficulty: str | None = None  # optional: "easy" | "medium" | "hard"
     source_doc_id: int | None = None  # the document the question was written from
     drafted_by: str = "human"  # "human" | "llm"
@@ -275,9 +276,17 @@ def validate(items: list[GoldenItem], conn=None) -> ValidationReport:
             rep.errors.append(
                 f"{where} no as_of date detected in temporal question, date is required"
             )
-        if it.type != "temporal" and it.as_of is not None:
+        # `as_of` is NOT limited to "temporal". `type` says how many articles an answer
+        # needs; time-dependence is a separate axis, and a causal or multi_doc question
+        # can be time-bound too (found in trial-1, 2026-10-20). What is suspicious is the
+        # opposite: a question that says "as of" while as_of is empty, so the Phase-3
+        # time filter would never apply. Note the distinction it draws: "In late November
+        # 2024, what did X say?" needs no as_of — what was said then never changes —
+        # while "As of <date>, what was reported...?" asks what was known at a date,
+        # which later articles can change. That is what as_of is for.
+        if it.as_of is None and re.search(r"\bas of\b", it.question, re.IGNORECASE):
             rep.warnings.append(
-                f"{where} as_of date detected in no temporal question, probably wrong type"
+                f"{where} question says 'as of' but as_of is empty — set as_of to that date"
             )
         # Checked whatever the type: a malformed date breaks Phase-3 time filtering
         # silently. !r makes a stray space visible in the message.
