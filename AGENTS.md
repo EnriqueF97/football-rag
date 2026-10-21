@@ -242,8 +242,17 @@ be written honestly, the project isn't finished, no matter how much code exists.
 ```bash
 sqlite3 data/corpus.db "SELECT COUNT(*) total, SUM(body_full IS NOT NULL) with_body,
   SUM(body_valid=1 AND dup_of IS NULL) usable FROM articles;"
-# → 33594 | 28941 | 25215   (verified 2026-09-13, after the LLM-audit cleanup)
+# → 33594 | 28941 | 25215   (verified 2026-09-13, after the LLM-audit cleanup;
+#                             re-verified 2026-10-21 after the title repair — unchanged)
 ```
+
+> **2026-10-21 title repair.** 327 titles (312 usable; all Sky Sports but one TeamTalk) had
+> HTML entities mangled by Media Cloud: Sky's `&#x27;` / `&quot;` / `&amp;` arrived as
+> `" ;"` ("Sjoeke Nusken ;s strike"). `corpus repair-titles --apply` restored **311** from
+> the page's own cached HTML, each verified by round-trip; **16 left untouched** (9 usable)
+> because Sky rewrote the headline after discovery or the page is gone. Titles only — no
+> body, count or validity changed (simulated first: 0 validity flips; Guardian share still
+> 41.975%). `corpus smell` now reports the 9 remaining.
 
 ### Source mix — deliberate, not accidental
 | Domain | Tier | Usable | Share |
@@ -313,10 +322,11 @@ All of it is reachable through the `corpus` console script (`pyproject.toml`
 | `extract.py` | 178 | HTML → clean body via `trafilatura` + `ftfy`; validity filter with reasons; `strip_boilerplate` removes per-source chrome. |
 | `dedup.py` | 160 | MinHash (128 perms) + LSH + union-find clustering; deterministic canonical election (valid → longest → earliest → lowest id); marks `dup_of`. |
 | `stats.py` | 201 | Corpus health funnel, loss accounting, domain concentration, temporal coverage, and the **Phase-2 readiness gates**. |
-| `smell.py` | 171 | Per-document anomaly battery — catches contamination that aggregate gates miss. |
+| `smell.py` | 177 | Per-document anomaly battery — catches contamination that aggregate gates miss. Includes a check for mangled HTML entities in titles (`' ;'`, added 2026-10-21) — the prevention for a defect Media Cloud can reintroduce. |
+| `titles.py` | 162 | **Title repair** (2026-10-21, written by Claude at the user's request): `corpus repair-titles` restores titles whose HTML entities Media Cloud mangled, from the page's cached HTML. A candidate is used only if re-mangling it reproduces the stored title (or a word-boundary prefix of the HTML title does, where Sky appended a suffix) — never a text replace, because `" ;"` was ambiguously `'`, `&` or `"`. Dry run by default; `--apply` writes in one transaction; `--use-current-html-title` (opt-in) replaces rewritten headlines of usable rows with the page's current title. Idempotent. |
 | `audit.py` | ~215 | **Discovery only.** Local LLM (Ollama) labels a sample ARTICLE/TEMPLATE to surface junk classes the lexical rules miss. Never writes to the corpus. Measured too imprecise to decide deletions — see its docstring for the numbers and why. |
 | `annotate.py` | ~140 | Blind terminal annotation (`a`/`t`/`s`/`q`), incremental + resumable. Built to validate `audit.py`; it is the prototype for the Phase-2 golden-set annotator. |
-| `cli.py` | 243 | The `corpus` command: `init, ingest, ingest-guardian, ingest-mediacloud, ingest-cc, fetch-cc, fetch, extract, dedup, stats, smell`. |
+| `cli.py` | 320 | The `corpus` command: `init, ingest, ingest-guardian, ingest-mediacloud, ingest-cc, fetch-cc, fetch, extract, dedup, stats, smell, repair-titles`. |
 
 ### §6b. `src/newsrag/eval/` — Phase 2 tooling, written
 
@@ -569,6 +579,14 @@ Reviving ESPN would need Wayback or a JS-capable fetcher; deferred.
   resolution came from a convention already in the codebase — `_USABLE` excludes twins
   everywhere, so only canonicals are annotated. **When two rules in one checker disagree,
   the tie-breaker is what the rest of the system already does, not which rule reads better.**
+- **Metadata from a discovery API is not the page.** Media Cloud's titles silently mangled
+  HTML entities in 327 Sky titles for months — found only when a human read them on the
+  audit screen; aggregate gates cannot see punctuation. Two lessons: (1) when a field came
+  from a third party, the cached source page is the ground truth to repair from — a regex
+  guessing the original would have been wrong, because `" ;"` stood for `'`, `&` or `"`
+  and the space before it was sometimes real; (2) measure the defect's full shape before
+  sizing it — the first estimate ("200 titles ending ` ;s`") missed `can ;t`, `O ;Neill`,
+  `Celtic ; Rangers` and `;fear ;`, and the real count was 327.
 - **Claude Code loads `.claude/agents/` only when a session starts.** A subagent defined
   mid-session is invisible to it ("Agent type '…' not found") until the session restarts.
   Hit on 2026-10-19 with `golden-drafter`. Create agent files at the start of a session,

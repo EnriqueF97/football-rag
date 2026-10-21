@@ -62,6 +62,12 @@ _SQL_CHECKS: list[tuple[str, str, str]] = [
      "title IS NULL OR trim(title) = ''"),
     ("residual site suffix in title (| Site)", "high",
      "title LIKE '%|%'"),
+    # Media Cloud decodes HTML entities in titles badly: Sky's &#x27; / &quot; / &amp;
+    # arrive as " ;" ("Nusken ;s strike"). Found 2026-10-21; `corpus repair-titles`
+    # restores them from the cached HTML. Media Cloud cannot be fixed from here, so this
+    # check is the prevention: a future ingest that brings the defect back shows up here.
+    ("mangled HTML entity in title (' ;')", "warn",
+     "title LIKE '% ;%'"),
     ("nav breadcrumb leaking into body", "warn",
      "body_full LIKE '%• England%' OR body_full LIKE '%• Spain%' "
      "OR body_full LIKE '%• Italy%' OR body_full LIKE '%• Germany%' "

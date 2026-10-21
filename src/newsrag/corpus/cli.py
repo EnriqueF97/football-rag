@@ -146,6 +146,14 @@ def _smell(args: argparse.Namespace) -> int:
     return 0
 
 
+def _repair_titles(args: argparse.Namespace) -> int:
+    """Restore titles with mangled HTML entities from the cached HTML (dry run by default)."""
+    from newsrag.corpus import titles
+
+    titles.repair_titles(apply=args.apply, use_current_html_title=args.use_current_html_title)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="corpus",
@@ -287,6 +295,17 @@ def build_parser() -> argparse.ArgumentParser:
         "smell", help="per-document anomaly checks over the usable corpus"
     )
     p_smell.set_defaults(func=_smell)
+
+    p_rt = sub.add_parser(
+        "repair-titles",
+        help="restore titles whose HTML entities Media Cloud mangled (' ;'), from the "
+             "cached HTML — dry run unless --apply")
+    p_rt.add_argument("--apply", action="store_true",
+                      help="write the changes (default: show them, write nothing)")
+    p_rt.add_argument("--use-current-html-title", action="store_true",
+                      help="for usable rows whose headline Sky rewrote, take the page's "
+                           "current title instead of leaving the old one")
+    p_rt.set_defaults(func=_repair_titles)
 
     return parser
 

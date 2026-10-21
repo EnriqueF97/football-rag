@@ -191,6 +191,17 @@ without touching code:
   syndicated pair estimates at 0.80 and was missed at 0.80, caught at 0.75.)
 - `--start` / `--end` — inclusive date bounds for the GDELT query window (`YYYY-MM-DD`).
 
+**`uv run corpus repair-titles`** — restores titles whose HTML entities Media Cloud mangled
+(Sky's `&#x27;` / `&quot;` / `&amp;` stored as `" ;"`, e.g. "Nusken ;s strike"), using the
+page's cached HTML. A repair is applied only if re-mangling it reproduces the stored title,
+so it never guesses. **Dry run by default** — prints every change and writes nothing.
+- `--apply` — write the changes, in one transaction (all or nothing).
+- `--use-current-html-title` — opt-in: for usable rows whose headline Sky rewrote after
+  discovery, take the page's current title (it matches the stored body, which came from
+  that same page). Changes words, not just punctuation — review the dry run first.
+- Safe to re-run: already-repaired titles no longer match, so a second run changes 0.
+  `corpus smell` flags any title still carrying the artifact.
+
 > These subcommands and flags are the **planned** interface; exact names may shift as
 > Phase 1 is implemented. This table will be updated to match the real CLI.
 
