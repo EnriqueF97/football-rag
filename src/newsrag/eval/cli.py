@@ -176,7 +176,11 @@ def _related(args: argparse.Namespace) -> int:
     from newsrag.eval.draft import related_docs
 
     try:
-        docs = related_docs(_connect(), args.doc_id, days=args.days, limit=args.limit)
+        # A content filter is for tracing a fact over a wide window, so its default limit
+        # is larger: closest-first with 15 would bury the far reports it exists to find.
+        limit = args.limit or (50 if args.contains else 15)
+        docs = related_docs(_connect(), args.doc_id, days=args.days, limit=limit,
+                            contains=args.contains)
     except ValueError as exc:
         _fail([str(exc)])
     return _emit({"seed": args.doc_id, "count": len(docs), "docs": docs})
@@ -494,11 +498,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser(
         "related",
         help="articles naming the same club(s) as DOC_ID within +-DAYS, closest first "
-             "(titles only); for following a story",
+             "(titles only); for following a story. With --contains: trace one fact "
+             "across a wider window",
     )
     p.add_argument("doc_id", type=int, help="the article to start from")
     p.add_argument("--days", type=int, default=4, help="window half-width (default: 4)")
-    p.add_argument("--limit", type=int, default=15, help="maximum results (default: 15)")
+    p.add_argument("--limit", type=int, default=None,
+                   help="maximum results (default: 15, or 50 with --contains)")
+    p.add_argument("--contains", action="append", default=None, metavar="WORD",
+                   help="only articles whose text contains this word; repeat for more (all "
+                        "must appear). The club may then be named in the body, and each "
+                        "result shows a snippet. Prefer single words to phrases — "
+                        "'unbeaten run' misses '33 games unbeaten'")
     p.set_defaults(func=_related)
 
     p = sub.add_parser(

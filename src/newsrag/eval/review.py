@@ -39,6 +39,7 @@ import dataclasses
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -292,22 +293,26 @@ def render_candidate(conn, record: dict, position: int, total: int) -> str:
 def concentration(conn, records: list[dict]) -> str:
     """How candidates spread across clubs — the measurement chosen over story exclusion.
 
-    Counts every candidate (any status) and every golden item by the clubs named in its
-    source article's headline. A club holding a large share is the signal that sampling
-    is clustering; nothing here blocks anything, it only makes the clustering visible.
+    Counts the golden set plus the candidates still PENDING — the set as it stands and as
+    it may become — by the clubs named in each source article's headline. Approved
+    candidates are not counted again (they are already golden items: the first version
+    counted them twice, 11 items for 9) and rejected ones never enter the set. A club
+    holding a large share is the signal that sampling is clustering; nothing here blocks
+    anything, it only makes the clustering visible.
     """
     from collections import Counter
 
     from newsrag.eval.draft import _clubs_in, get_docs
     from newsrag.eval.golden import load
 
-    sources = [r.get("source_doc_id") for r in records] + [it.source_doc_id for it in load()]
+    sources = [r.get("source_doc_id") for r in records if r.get("status") == "pending"]
+    sources += [it.source_doc_id for it in load(GOLDEN_PATH)]
     sources = [s for s in sources if s is not None]
     titles = {d["doc_id"]: d["title"] for d in get_docs(conn, sorted(set(sources)))}
     clubs = Counter(c for s in sources for c in _clubs_in(titles.get(s)))
     no_club = sum(1 for s in sources if not _clubs_in(titles.get(s)))
     top = ", ".join(f"{club} {n}" for club, n in clubs.most_common(8))
-    return (f"{_bold('Concentration')} over {len(sources)} items (golden + all candidates), "
+    return (f"{_bold('Concentration')} over {len(sources)} items (golden + pending), "
             f"by club in the source headline: {top or '—'}"
             + (f"; no club named: {no_club}" if no_club else ""))
 
@@ -341,10 +346,25 @@ def _append_golden(item) -> None:
         f.write(json.dumps(dataclasses.asdict(item), ensure_ascii=False) + "\n")
 
 
-def approve(conn, path: Path, record: dict, fields: dict | None = None) -> tuple[bool, str]:
+def _confirm_warnings(warnings: list[str]) -> bool:
+    """Show validator warnings and ask whether to approve anyway. Default: no."""
+    print(_bold("WARNINGS — usually a mistake, occasionally deliberate:"))
+    for w in warnings:
+        print(_wrap(f"! {w}"))
+    return input("approve anyway? [y/N] ").strip().lower() in {"y", "yes", "s", "si", "sí"}
+
+
+def approve(conn, path: Path, record: dict, fields: dict | None = None,
+            confirm=None) -> tuple[bool, str]:
     """Turn a candidate into a golden item. Returns (done, message).
 
     `fields` is the auditor's edited version (see `edit`); None means approved as drafted.
+
+    WARNINGS BLOCK UNLESS CONFIRMED — the same rule as `golden submit`. The first version
+    printed warnings only AFTER approving, so q0007 (a question saying "As of 30 April
+    2026" with as_of empty) entered the golden set with the warning shown too late to act
+    on (found in the first real audit, 2026-10-21). `confirm` is called with the warnings
+    and decides; without it, warnings simply block — the safe default.
 
     ORDER AND IDEMPOTENCY. Approving writes two files: the golden set, then the candidate's
     status. A crash between the two would leave the candidate "pending" although its item
@@ -355,7 +375,12 @@ def approve(conn, path: Path, record: dict, fields: dict | None = None) -> tuple
     from newsrag.eval.golden import GoldenItem, load, validate
 
     golden = load(GOLDEN_PATH)  # the same file _append_golden writes to — read and write must agree
-    data = {k: record.get(k) for k in EDITABLE} | (fields or {})
+    drafted = {k: record.get(k) for k in EDITABLE}
+    data = drafted | (fields or {})
+    # An edit is a CHANGE, not an opened editor: closing it unchanged is an approval as
+    # drafted. Found 2026-10-21 — the Tudor item was recorded "edited" with nothing
+    # changed, which inflates the edit rate the audit exists to report honestly.
+    changed = data != drafted
     clash = next((it for it in golden if data["source_doc_id"] is not None
                   and it.source_doc_id == data["source_doc_id"]), None)
     if clash:
@@ -368,6 +393,7 @@ def approve(conn, path: Path, record: dict, fields: dict | None = None) -> tuple
         id=next_golden_id([it.id for it in golden]),
         drafted_by=record.get("drafted_by", "llm"),
         reviewed_by="human",
+        edited_by="human" if changed else None,
         created_at=date.today().isoformat(),
         difficulty=record.get("difficulty"),
         **data,
@@ -376,19 +402,23 @@ def approve(conn, path: Path, record: dict, fields: dict | None = None) -> tuple
     if report.errors:
         return False, "not approved — fix with [e]dit:\n" + "\n".join(
             f"  ✗ {e}" for e in report.errors)
+    if report.warnings and not (confirm and confirm(report.warnings)):
+        return False, "not approved — fix with [e]dit, or approve again and confirm:\n" + \
+            "\n".join(f"  ! {w}" for w in report.warnings)
 
     _append_golden(item)
     update_candidate(path, record["candidate_id"], {
         "status": "approved",
-        "decision": "edited" if fields else "approved",
+        "decision": "edited" if changed else "approved",
         "golden_id": item.id,
         "audited_at": _now(),
         # What the auditor changed, kept beside the drafter's original: this is what the
         # edit rate measures, and what a prompt revision learns from.
-        **({"approved_as": {k: data[k] for k in EDITABLE}} if fields else {}),
+        **({"approved_as": {k: data[k] for k in EDITABLE}, "edited_by": "human"}
+           if changed else {}),
     })
-    warn = "".join(f"\n  ! {w}" for w in report.warnings)
-    return True, f"approved as {item.id}{warn}"
+    note = " (warnings confirmed by the auditor)" if report.warnings else ""
+    return True, f"approved as {item.id}{note}"
 
 
 def edit(conn, path: Path, record: dict) -> tuple[bool, str]:
@@ -412,8 +442,15 @@ def edit(conn, path: Path, record: dict) -> tuple[bool, str]:
             tmp.write(problems + draft)
             tmp_path = Path(tmp.name)
         try:
-            subprocess.run([*editor.split(), str(tmp_path)], check=False)
+            # shlex, not str.split: an editor path with spaces ("/Applications/Visual
+            # Studio Code.app/...") must survive when quoted, as it would in a shell.
+            subprocess.run([*shlex.split(editor), str(tmp_path)], check=False)
             text = tmp_path.read_text()
+        except FileNotFoundError:
+            # e.g. EDITOR="code --wait" before VS Code's `code` command is installed.
+            return False, (f"editor not found: {editor!r}. For VS Code, run 'Shell Command: "
+                           f"Install code command in PATH' from its command palette, or set "
+                           f"EDITOR to the full path of the editor.")
         finally:
             tmp_path.unlink(missing_ok=True)
 
@@ -429,7 +466,8 @@ def edit(conn, path: Path, record: dict) -> tuple[bool, str]:
             draft, problems = body, f"// fix this, or empty the file to cancel:\n// {exc}\n"
             continue
 
-        done, message = approve(conn, path, record, fields)
+        # Declining a warning reopens the editor with it on top, like an error would.
+        done, message = approve(conn, path, record, fields, confirm=_confirm_warnings)
         if done:
             return True, message
         draft = body
@@ -538,7 +576,7 @@ def review_loop(batch: str | None = None) -> None:
             while True:
                 choice = _ask(f"\n{_MENU}\n> ").lower()
                 if choice == "a":
-                    ok, msg = approve(conn, path, record)
+                    ok, msg = approve(conn, path, record, confirm=_confirm_warnings)
                     print(msg)
                     if ok:
                         done_now += 1

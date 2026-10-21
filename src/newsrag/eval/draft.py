@@ -348,39 +348,61 @@ def sample_bundles(
     return out
 
 
-def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15) -> list[dict]:
+def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15,
+                 contains: list[str] | None = None) -> list[dict]:
     """Documents naming the same club(s) as `doc_id`, published within ±`days` of it.
 
     The agent's way to follow a thread: start from an article that looks promising and
     look around it — for the second half of a `multi_doc` answer, or for the outlet that
-    contradicts the first. Bounded on purpose: it relates by club and date, never by free
-    text. A free-text search tool would act as a retriever, and whatever it surfaced would
-    become `relevant_docs` — biasing the golden set toward that retriever (AGENTS §7).
+    contradicts the first.
+
+    TWO MODES.
+    - Without `contains` (the default): related by club and date only — the club must be
+      named in the headline. No text search, so it cannot act as a retriever.
+    - With `contains` (added 2026-10-21): only articles whose body contains EVERY given
+      word (case-insensitive), with the club named in the headline OR the body, and each
+      result carries a `snippet` around the first word. For tracing one fact across time:
+      in the Parker case, the reports that mattered most were a year before the seed and
+      one headline named only Leeds and Luton — headline-club matching within ±4 days
+      found 1 of the 5 other reports; ±400 days with contains=["unbeaten", "promotion"]
+      finds all 5 among 33 results, the figure visible in each snippet.
+
+    KNOWN BIAS of the second mode, accepted on the record: matching words in the text is
+    lexical search, and documents it finds become `relevant_docs` — tilting those items
+    toward keyword retrieval (BM25), one of the systems under test (AGENTS §7). It is kept
+    narrow on purpose (inside the seed's clubs, words the agent picks from a fact it has
+    already read), and relevance pooling round 2, with dense retrieval, is what completes
+    what keyword matching misses.
 
     Args:
-        conn:    open corpus DB connection.
-        doc_id:  the seed article.
-        days:    half-width of the time window around the seed's publication day.
-        limit:   maximum documents returned. Needed: a big club has a lot of coverage.
+        conn:     open corpus DB connection.
+        doc_id:   the seed article.
+        days:     half-width of the time window around the seed's publication day.
+        limit:    maximum documents returned. Needed: a big club has a lot of coverage.
+        contains: words that must ALL appear in the body; prefer two single words to one
+                  phrase — "unbeaten run" misses "33 games unbeaten".
     Returns:
         Closest in time first; ties broken by id so the result is deterministic.
         [{"doc_id": 1204, "title": "...", "domain": "theguardian.com", "tier": "reliable",
-          "published_at": "2024-10-25T...", "days_apart": 0}, ...]
+          "published_at": "2024-10-25T...", "days_apart": 0,
+          "snippet": "...only with contains..."}, ...]
         An empty list when the seed's headline names no club — nothing to relate by.
 
     Raises:
         ValueError: the seed is not in the usable corpus. Raised, not an empty list: for
         an agent, "that id is wrong" and "nothing related" must look different.
 
-    Expected (measured 2026-10-18):
+    Expected (measured 2026-10-18 / 2026-10-21):
         related_docs(conn, 1194) — "Arteta warns Arsenal ... before Liverpool clash",
         2024-10-25, clubs {Arsenal, Liverpool}: 119 related docs within ±4 days (93 at
         ±3), across 6 domains. With limit=15 you get the 15 closest in time, starting
         with 1204, 13997, 14314, 21965 (all same day).
         Seeded on the Ten Hag sacking (doc 1240, 2024-10-28): 59 related docs spanning
         2024-10-24 to 2024-11-01 — the whole story that a fixed 4-day block cuts in two.
+        related_docs(conn, 9478, days=400, limit=50, contains=["unbeaten", "promotion"])
+        -> 33 docs, including 39034, 4058, 59409, 59436, 60563.
     """
-    # --- 1. The seed --------------------------------------------------------- (given)
+    # --- 1. The seed ---------------------------------------------------------------
     seed = conn.execute(
         f"SELECT title, published_at FROM articles WHERE id = ? AND {_USABLE}",
         (doc_id,),
@@ -392,31 +414,41 @@ def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15) -> list[dict
     clubs = _clubs_in(seed_title)
     if not clubs:
         return []
+    words = [w for w in (contains or []) if w.strip()]
 
-    # --- 2. Candidates in the time window ------------------------------------ (given)
-    # Dates filtered in SQL (cheap, uses the ISO-string ordering); clubs filtered in
-    # Python, because the aliases make a SQL LIKE unreliable.
+    # --- 2. Candidates in the time window ------------------------------------------
+    # Dates — and, with `contains`, words — filtered in SQL (cheap); clubs filtered in
+    # Python, because the aliases make a SQL LIKE unreliable. The body is fetched only
+    # when it is needed, for the content filter and the snippet.
     seed_day = date.fromisoformat(seed_published[:10])
     lo = (seed_day - timedelta(days=days)).isoformat()
     hi = (seed_day + timedelta(days=days)).isoformat()
-    rows = conn.execute(
-        f"SELECT id, title, domain, tier, published_at FROM articles "
-        f"WHERE {_USABLE} AND id != ? AND substr(published_at, 1, 10) BETWEEN ? AND ?",
-        (doc_id, lo, hi),
-    ).fetchall()
+    sql = (f"SELECT id, title, domain, tier, published_at, "
+           f"{'body_full' if words else 'NULL'} FROM articles "
+           f"WHERE {_USABLE} AND id != ? AND substr(published_at, 1, 10) BETWEEN ? AND ?")
+    sql += "".join(" AND body_full LIKE ? COLLATE NOCASE" for _ in words)
+    rows = conn.execute(sql, (doc_id, lo, hi, *[f"%{w}%" for w in words])).fetchall()
 
-    # --- 3. Keep rows that share at least one club with the seed ------------------
+    # --- 3. Keep rows that share at least one club with the seed --------------------
     # `&` is set intersection; an empty intersection is falsy, so it is the condition.
+    # With `contains`, the club may be named in the body: a report of a Burnley figure
+    # can sit under a headline about Leeds and Luton (doc 4058).
     related: list[dict] = []
-    for rid, title, domain, tier, published_at in rows:
-        if _clubs_in(title) & clubs:
-            related.append({
-                "doc_id": rid, "title": title, "domain": domain, "tier": tier,
-                "published_at": published_at,
-                "days_apart": abs((date.fromisoformat(published_at[:10]) - seed_day).days),
-            })
+    for rid, title, domain, tier, published_at, body in rows:
+        named = _clubs_in(title) | (_clubs_in(body) if words else set())
+        if not named & clubs:
+            continue
+        doc = {
+            "doc_id": rid, "title": title, "domain": domain, "tier": tier,
+            "published_at": published_at,
+            "days_apart": abs((date.fromisoformat(published_at[:10]) - seed_day).days),
+        }
+        if words:
+            at = body.lower().find(words[0].lower())
+            doc["snippet"] = " ".join(body[max(0, at - 90): at + 110].split())
+        related.append(doc)
 
-    # --- 4. Closest first, deterministic, capped ---------------------------------
+    # --- 4. Closest first, deterministic, capped -----------------------------------
     # The doc_id tie-break keeps same-day documents in a fixed order, so the agent sees
     # the same "top N" on every run.
     related.sort(key=lambda d: (d["days_apart"], d["doc_id"]))

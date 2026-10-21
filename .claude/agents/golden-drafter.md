@@ -27,6 +27,7 @@ You work through one command-line tool, `golden`, run from the project root with
 | `sample-docs --n 5 --seed S` | single articles across months and outlets: titles and a short preview | find material for factual, causal and temporal questions |
 | `sample-bundles --n 3 --seed S` | groups of articles about the same club over the same few days, from several outlets: titles only | find material for multi_doc and contradictory questions |
 | `related DOC_ID` | articles naming the same club within a few days of DOC_ID, closest first: titles only | follow a story — find the second half of an answer, or the outlet that disagrees |
+| `related DOC_ID --days 400 --contains W1 --contains W2` | articles mentioning the club anywhere, within the wider window, whose text contains every word, each with a snippet around the first word | trace one fact across time — every article that reports a figure or claim, including ones months away |
 | `get ID [ID ...]` | the full text of those articles | read before you write anything |
 | `submit -` | checks a candidate and saves it for audit only if every check passes | hand in a finished candidate |
 
@@ -75,13 +76,17 @@ Before your first candidate, read `data/golden/RELEVANCE_RUBRIC.md`. It defines 
 | `causal` | a *why* or *how* the article explains | the article, level 2 |
 | `temporal` | an answer that depends on when you ask — what was reported or expected *as of* a date | level 2; set `as_of` |
 | `multi_doc` | an answer no single article holds; it needs two or more | every contributing article, level 1 |
-| `contradictory` | outlets reporting different things, where the disagreement is the answer — the question asks what each reported | each article, level 2, from different outlets |
+| `contradictory` | articles reporting different versions of the same fact, where the disagreement is the answer — the question asks neutrally what was reported | every article that gives a version, level 2 |
 
 Do not draft `unanswerable` questions; those are written separately.
 
 **`as_of` is not only for `temporal`.** The type says how many articles an answer needs; whether the answer depends on the date is a separate matter. Set `as_of` on **any** question whose right answer could change with later reporting — a `causal` or `multi_doc` question asked "as of" a date needs it just as much. It is the day the question is asked from, as `YYYY-MM-DD`, normally the publication date of the latest article you rely on; every relevant article must be published on or before it. A date that only places an event in time does not need it: *"In late November 2024, what did Szoboszlai say?"* — what he said then never changes. *"As of 30 April 2026, what had been reported...?"* does: later articles can change what was known.
 
 **A good `multi_doc` is a story spread across articles**, not two facts stapled together. The strongest kind: an event in one article and its consequence in another, or the steps of a story reported on different days. Be wary of bundles where several outlets repeat the same facts — if one article already answers the question, it is not `multi_doc`. And if the only thing joining two articles is that each happened to print a different detail on the same day, the question is weak: prefer a story where the parts depend on each other.
+
+**A good `contradictory` question does not announce the contradiction.** The skill it measures is whether a system, asked an ordinary question, gathers several reports and notices they disagree — instead of repeating the first figure it finds. Naming the outlets, or saying they differ, hands it that work. Ask what *was reported*, neutrally; ask for "the actual figure" only if the articles settle which one is right, because otherwise the rubric scores every report but the true one as 0 and nothing in the corpus says which is true. One question named "The Guardian and Sky Sports" and asked what "each" said about Burnley's unbeaten run under Scott Parker; it became *"As of 30 April 2026, what had been reported about the length of the unbeaten run Burnley put together under Scott Parker in their 2024-25 Championship promotion season?"*
+
+Then **find every version, not just the two you started from.** When an article states a figure or a claim that others may have reported too, trace it: `related DOC_ID --days 400 --contains W1 --contains W2`, with two single words from the fact (`unbeaten`, `promotion` — a phrase like "unbeaten run" would miss "33 games unbeaten"). The snippets show each article's version without opening it. In the Burnley case, the ±4-day view showed two outlets saying 31 and 33; tracing found six articles, the most reliable of them end-of-season reports from a year earlier, and one outlet contradicting itself on the same day. Annotate every article that gives a version; leave out running counts that were true only at the time (an "unbeaten in 26" mid-season is not a version of the final figure).
 
 ### Seven rules, and why
 

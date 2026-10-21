@@ -86,6 +86,9 @@ class GoldenItem:
     source_doc_id: int | None = None  # the document the question was written from
     drafted_by: str = "human"  # "human" | "llm"
     reviewed_by: str = "human"
+    # Who changed the item after drafting: "human" | "llm"; None = unchanged since drafted.
+    # Added 2026-10-21 so a post-draft change is attributed, not only the draft and review.
+    edited_by: str | None = None
     notes: str = ""
     created_at: str = ""
 

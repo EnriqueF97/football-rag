@@ -454,7 +454,11 @@ downstream choice.*
         `uv run review` (`eval/review.py`, 2026-10-21, written by Claude at the user's
         request, in four parts). Tested on copies; **first real audit (the 4 pending
         trial candidates) still to do**
-  - [ ] **2.2.2f** First real audit with `review`: the 4 trial candidates
+  - [x] **2.2.2f** First real audit with `review` (2026-10-21): all 4 trial candidates —
+        q0006 approved as drafted; q0007, q0008, q0009 edited (q0008 by the user, q0007
+        and q0009 corrected by Claude at his request; `edited_by` added to the schema).
+        Rates: 1 approved / 3 edited / 0 rejected — 75% edited. Audit fixes: warnings
+        block unless confirmed; no double-counting; an unchanged edit counts as approved.
   - [x] **2.2.2e** Pipeline vs agent → **agent** (user's decision, 2026-10-18): it uses
         the user's own tools (`sample_docs`, `sample_bundles`, `get_docs`, `validate`) and
         writes candidates, never `golden_set.jsonl` directly
