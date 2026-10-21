@@ -168,6 +168,37 @@ Project-specific additions to that agreement:
 - **Keep `project_progress.md` current** (checkboxes + %), and **this file** (see the
   standing rule above).
 
+### Session roles (added 2026-10-21)
+
+Several Claude Code sessions can work on this project at once. **A session's role is
+declared in the user's first message** (e.g. `Rol: batch-runner. …`); **with no
+declaration, the session is `lead`.** Read your role before acting — it decides which
+files you may touch.
+
+| Role | What it is for | May | May not |
+|---|---|---|---|
+| **lead** (default) | normal work: design, code, review, documentation | everything this file and `WORKING_AGREEMENT.md` allow; it is the **only** role that edits `AGENTS.md` and `project_progress.md` | — |
+| **batch-runner** | launching the `golden-drafter` subagent for one batch | launch the agent with the batch details from the request; check `git status`; relay the agent's report **verbatim** | edit files — **not a single one**, this file and `project_progress.md` included; prepare commits; audit or change candidates; give the agent instructions beyond the request |
+| **golden-drafter** | the subagent itself | what `.claude/agents/golden-drafter.md` allows: `uv run golden …` only, `submit` as its single write path | everything else (see its Boundaries section) |
+
+**Why batch-runner is read-only — an exception to the standing rule.** Running a batch does
+not change the project's state; *reviewing* it does. After trial-1 and trial-2 the
+sessions that launched the agent wrote "2 of 2 accepted" into this file before anyone had
+checked the candidates — and review then found an annotation gap in one of them. Two
+sessions editing the same paragraphs also risk overwriting or contradicting each other.
+So the batch-runner reports and stops; the lead session reviews the batch and records it.
+
+A batch-runner request, for reference:
+
+> Rol: batch-runner. Corre el golden-drafter: 1 multi_doc y 1 factual, batch trial-3,
+> semilla inicial 30.
+
+The batch-runner relays the report as-is and ends with `git status`; the user then brings
+the report to a lead session for review. Launching from a lead session is equally valid —
+the subagent runs in its own context and only its report comes back — and avoids a second
+writer altogether; a separate batch-runner session is for when that is inconvenient, such
+as parallel batches or a restart forced by an edit to the agent's definition.
+
 ## 4. Where we are — status and roadmap
 
 **Overall completion: 25%.** Phase 1 (corpus) finished 2026-07-22.
@@ -294,9 +325,9 @@ All of it is reachable through the `corpus` console script (`pyproject.toml`
 | `golden.py` | 365 | `GoldenItem` / `ValidationReport` schema, `load()` (JSONL, fails loudly with `file:line`), `validate()` (rubric rules), `_check_docs()` (corpus-backed: existence, canonicality, `body_valid`, **no relevant doc published after `as_of`**). **`as_of` is allowed on any question type** (2026-10-20, after trial-1): `type` says how many articles an answer needs, time-dependence is a separate axis, so the old "as_of on a non-temporal question → wrong type?" warning was removed; instead a question whose text says "as of" while `as_of` is empty warns. "In late November 2024, what did X say?" needs no as_of (what was said never changes); "As of <date>, what was reported…?" does (later articles change what was known). `_is_iso_date()` enforces strict `YYYY-MM-DD` via a parse + round-trip — `date.fromisoformat` alone accepts `"20241124"` and `"2024-W47-7"` on Python ≥3.11. Both date checks added 2026-10-17 after 2 of the first 6 hand-written questions shipped a malformed or wrong-year `as_of` that the validator could not see. Verified against the live DB. |
 | `draft.py` | 151 | `sample_docs()` — stratified over **(month, domain)**, 138 buckets, seeded and reproducible, round-robin so Guardian's 42% share does not become the golden set's shape. `used_source_ids()` feeds `exclude=` so repeated sessions hand over new material. Verified: exact counts, exhaustion guard, reproducibility, no duplicates, 138/138 buckets at n=150. **`sample_bundles()` written 2026-10-18** (implemented by Claude at the user's explicit request): groups documents by (club in headline, 4-day block), keeps groups with ≥3 outlets, stratifies across clubs — input for `multi_doc`/`contradictory`. Verified: 1,034 qualifying bundles; first 20 come from 20 different clubs; reproducible per seed; exclude honoured; exhaustion guard. Both sampling queries now `ORDER BY id` — SQL guarantees no row order otherwise, and a seeded shuffle is only reproducible over a fixed input order (no change to today's output, verified). `CLUB_ALIASES`, `_clubs_in()` and `get_docs()` are written and verified. **`related_docs(doc_id, days=4, limit=15)` written 2026-10-18** (by Claude at the user's request): same-club documents within ±days of a seed, closest first (`(days_apart, doc_id)` key, so deterministic), capped — lets the agent follow a thread without a free-text search tool (which would act as a retriever and bias `relevant_docs`). Verified: seeded on the Ten Hag sacking it recovers 59 docs spanning 24/10–01/11, the story a fixed block splits; invalid id raises; club-less headline returns `[]`. |
 
-| `cli.py` | 512 | **The `golden` console script** (2026-10-19, written by Claude at the user's request, part by part): `sample-docs`, `sample-bundles`, `related`, `get`, `submit` — the terminal face of the tools above, so the `golden-drafter` subagent and the human use the same ones. Contract: one JSON object on stdout, `"ok"` + `"errors"`, exit code mirrors ok — argparse errors rerouted to honour it. Reading is two-step (previews, then `get`) to keep the agent's context lean. `submit` is the **only** write path to `data/candidates/`: schema → `validate()` → evidence shape → grounding → source-not-reused, all errors reported in one pass; **warnings block too** (2026-10-20) unless `--allow-warnings` is passed with a non-empty `notes` — a candidate saved with a warning could never be fixed, because saving marks its source article as used; ids and provenance (`drafted_by="llm"`, `reviewed_by=""`) set by code, never by the drafter. **`_check_grounding()`** (written by Claude at the user's request, 2026-10-19) answers only "does this quote exist in the article?" — never "does it support the answer?" or "is the answer true?", which the human judges at audit with the quote highlighted. A quote passes if, after `_normalise` on both sides (curly→straight quotes, en/em dash→hyphen, `…`→`...`, NBSP→space, any whitespace run→one space; case kept), it is a **contiguous** substring of the body and ≥25 chars. Look-alike set chosen by measurement over the usable bodies (curly quotes 0% — ftfy strips them — en dash 42%, `…` 16%, NBSP 5%). Paraphrases and `...`-stitched quotes fail by design; two passages = two evidence entries. Verified on real articles in both directions for each look-alike. Commands documented in `docs/commands.md` §5b. |
+| `cli.py` | 536 | **The `golden` console script** (2026-10-19, written by Claude at the user's request, part by part): `sample-docs`, `sample-bundles`, `related`, `get`, `submit` — the terminal face of the tools above, so the `golden-drafter` subagent and the human use the same ones. Contract: one JSON object on stdout, `"ok"` + `"errors"`, exit code mirrors ok — argparse errors rerouted to honour it. Reading is two-step (previews, then `get`) to keep the agent's context lean. **`_used_docs()` returns two sets on purpose** (2026-10-21): sampling skips every document already used by the golden set or any candidate, as source *or relevant* (a diversity rule), while `submit` rejects only a reused *source* (a correctness rule — sharing a relevant article is normal). `submit` is the **only** write path to `data/candidates/`: schema → `validate()` → evidence shape → grounding → source-not-reused, all errors reported in one pass; **warnings block too** (2026-10-20) unless `--allow-warnings` is passed with a non-empty `notes` — a candidate saved with a warning could never be fixed, because saving marks its source article as used; ids and provenance (`drafted_by="llm"`, `reviewed_by=""`) set by code, never by the drafter. **`_check_grounding()`** (written by Claude at the user's request, 2026-10-19) answers only "does this quote exist in the article?" — never "does it support the answer?" or "is the answer true?", which the human judges at audit with the quote highlighted. A quote passes if, after `_normalise` on both sides (curly→straight quotes, en/em dash→hyphen, `…`→`...`, NBSP→space, any whitespace run→one space; case kept), it is a **contiguous** substring of the body and ≥25 chars. Look-alike set chosen by measurement over the usable bodies (curly quotes 0% — ftfy strips them — en dash 42%, `…` 16%, NBSP 5%). Paraphrases and `...`-stitched quotes fail by design; two passages = two evidence entries. Verified on real articles in both directions for each look-alike. Commands documented in `docs/commands.md` §5b. |
 
-**`.claude/agents/golden-drafter.md`** (132 lines, 2026-10-19, tuned 2026-10-20, committed with the repo so
+**`.claude/agents/golden-drafter.md`** (135 lines, 2026-10-19, tuned 2026-10-20 and 2026-10-21 — starting seed from the request, seeds listed in the report, committed with the repo so
 every clone gets the same agent): the drafting subagent. Frontmatter `tools: Bash, Read`,
 `model: sonnet` — no Write/Edit, so `golden submit` is its only sanctioned write path (Bash
 could still write; the prompt's Boundaries section and `git status` are what contain it).
@@ -327,9 +358,42 @@ without as_of warns), `submit` (warnings block unless `--allow-warnings` + notes
 prompt — as_of for any time-bound question, what a good `multi_doc` is (a story across
 articles, not stapled facts), the "barrier" case under the premise rule, a **new rule 7:
 ask in your own words** (copied phrasing favours keyword search, one of the systems under
-test), and how to handle warnings. **Next: `trial-2`**, including one `contradictory`
-— the agent spotted Guardian reporting Parker's unbeaten run as 33 games where Sky/BBC
-say 31.
+test), and how to handle warnings.
+
+**trial-2 (2026-10-20, 1 contradictory + 1 causal):** both passed `golden submit` first
+try with no warnings; tree clean afterwards. The agent also correctly reported its own
+prompt (7 rules, last = "Ask in your own words"), i.e. it loaded the tuned version.
+Candidates: Parker's unbeaten run, Guardian 9478 (33 games) vs Sky 60563 (31), as_of
+2026-04-30; and why Spurs parted with Igor Tudor after seven games (Guardian 8979), as_of
+2026-03-29. Edited by the main session.
+
+**Review of trial-2 (2026-10-20), verified against the articles.** The tuning held where it
+could be tested (as_of set wherever the question says "as of"; no warnings). The
+contradictory item is sound: Guardian "club record 33-game unbeaten run" vs Sky "31-match",
+both 30 April; BBC 59436 (also 31) correctly left out because the question names the two
+outlets. The 33/31 gap is probably a counting difference (league vs all competitions) —
+irrelevant to a question about what each *reported*. The causal item (Tudor) has an
+**annotation gap**: the agent's note says Sky 60511 only frames the exit as "inevitable",
+but Sky gives the core reasons (five defeats in seven, the 3-0 Forest loss leaving Spurs a
+point above the drop, never managed in the Premier League) — at least level 1, arguably 2;
+unannotated, a system retrieving it would be scored as a miss. Its question also still
+borrows phrasing ("parted company… after seven games"), and its answer includes a non-reason
+("mutually agreed"). Both questions open with "As of" — watch that this does not become a
+template. **Design problem found:** `sample-bundles --seed 1` (the agent's first seed)
+returns the same Burnley 30-April bundle as in trial-1, because exclusion only removes each
+candidate's *source* article; that story now holds two candidates sharing doc 60563.
+**Resolved 2026-10-21, not by story exclusion.** Excluding whole stories was considered and
+rejected by the user: it treats the symptom, and the "story" definitions measured were
+either weak (a bundle: misses stories straddling block edges) or, at scale, too aggressive
+(same club ±4 days: ~22 docs excluded per used doc — it would empty the big clubs' bundles
+before 150 items). The cause was a fixed starting seed plus source-only exclusion. Fixes:
+(1) sampling now excludes every used document, not just sources — this alone dropped the
+Burnley 30-April bundle (its remaining articles fell below 3 outlets); (2) each batch gets
+its own starting seed from the request, and the agent reports every seed it used. Residual
+effect to keep in view: club-stratified sampling gives each club an equal turn, so a club
+with few bundles (Burnley: one left) sees each of them picked often; the audit tool should
+show candidates per club so concentration is measured, not assumed. Next: the audit tool
+(2.2.2d) — four candidates (two per trial) await audit, several needing edits.
 
 Who edited docs during trial-1: the *main* session that launched the agent (per the
 standing rule), not the subagent, which has no Edit/Write tool — confirmed from the

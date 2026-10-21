@@ -30,11 +30,13 @@ You work through one command-line tool, `golden`, run from the project root with
 | `get ID [ID ...]` | the full text of those articles | read before you write anything |
 | `submit -` | checks a candidate and saves it for audit only if every check passes | hand in a finished candidate |
 
-Sampling never returns an article that is already the source of a golden item or a submitted candidate. Change `--seed` for each new sampling round (1, then 2, then 3...): with the same seed and nothing new submitted in between, you would get the same articles back.
+Sampling never returns an article already used by a golden item or a submitted candidate — as its source or as a relevant document — so it steers you away from stories that already have a question.
+
+**Seeds.** Start from the seed given in the request and add 1 for each new sampling round. The tools are deterministic: the same seed returns the same articles, so every batch that started from the same seed would see the same stories first — after one trial, the next drafted from the same story again. A different starting seed per batch is what spreads the golden set across stories. If the request gives no seed, pick one you have no reason to think was used before, and say which in your report. Either way, list every seed you used in the report, so the batch can be reproduced.
 
 ## How to work
 
-The request that starts you says how many candidates to produce, which question types, and a batch name. Then:
+The request that starts you says how many candidates to produce, which question types, a batch name and a starting seed. Then:
 
 1. **Sample, then scan.** Read the titles and previews and pick the articles that carry a real story — a decision, a dispute, a statement, a reported fee. Many will not: match previews, listicles, gossip round-ups and opinion pieces rarely support a good question. Skipping is normal and cheap; forcing a question out of a thin article is what produces rejections.
 2. **Read the full text** with `get` before writing anything, and read all of it. The answer, or the detail that changes it, is often in the last paragraphs.
@@ -117,6 +119,7 @@ Your final message is all that reaches the person who started you, so make it co
 
 ```
 Batch: <batch name>
+Seeds used: <every seed, in order — e.g. sample-docs 30, 31; sample-bundles 30>
 Accepted: <n> of <requested>
 
 - <candidate_id> · <type> · doc <source_doc_id> · <the question, in one line>

@@ -213,8 +213,12 @@ contract (argparse errors are rerouted). `golden <cmd> --help` is the per-comman
 | `uv run golden submit FILE` (or `-` for stdin) | checks a candidate (schema, `validate()`, evidence shape, grounding, source not reused) and appends it to `data/candidates/<batch>.jsonl` **only if all pass**; reports every error at once. **Warnings block too** (a saved candidate marks its source used, so it could not be fixed afterwards) | `--batch NAME` (one per parallel agent) · `--allow-warnings` (save anyway; requires `notes` explaining why) |
 
 Reading is two-step on purpose: sampling shows previews, `get` shows full text — every
-printed character stays in the agent's context. Sampling excludes the sources of both the
-golden set and all candidates (pending, approved or rejected).
+printed character stays in the agent's context. Sampling excludes **every document already
+used** by the golden set or any candidate (pending, approved or rejected), as source or as
+relevant — a diversity rule. `submit` rejects only a reused *source* — a correctness rule;
+sharing a relevant article with another question is fine. Give each batch its own starting
+`--seed`: sampling is deterministic, so batches starting from the same seed see the same
+stories first.
 
 ---
 

@@ -441,8 +441,11 @@ downstream choice.*
         (`as_of` limited to temporal, copied phrasing, a stapled multi_doc with a framing
         the source never used) → validator, `submit` and prompt tuned (AGENTS §6b).
         The multi_doc candidate stays in `trial-1.jsonl`, undecided.
-  - [ ] **2.2.2b'''** `trial-2`: confirm the tuning holds; include 1 `contradictory`
-        (lead: Parker's unbeaten run, 33 games per Guardian vs 31 per Sky/BBC)
+  - [x] **2.2.2b'''** `trial-2` (2026-10-20): 1 contradictory (Parker's unbeaten run, 33
+        vs 31 — sound) + 1 causal (Tudor — Sky 60511 wrongly left unannotated). Tuning held.
+        Found the agent re-drafting from the same story (fixed starting seed + source-only
+        exclusion) → 2026-10-21: sampling excludes every used doc; each batch gets its own
+        starting seed, reported back. Story-level exclusion considered and rejected.
   - [x] **2.2.2c** Deterministic grounding check — every quote must occur in its doc body
         (`cli.py::_check_grounding`, 2026-10-19): existence only, after typographic
         normalisation; truth and support stay with the human auditor

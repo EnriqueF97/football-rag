@@ -89,32 +89,54 @@ def _fail(errors: list[str]) -> None:
 PREVIEW_CHARS = 300
 
 
-def _excluded_ids() -> set[int]:
-    """Doc ids never to hand out again: the source of every golden item AND every candidate.
+def _used_docs() -> tuple[set[int], set[int]]:
+    """Every document already used, across the golden set AND all candidates.
 
-    WHY CANDIDATES TOO: `used_source_ids()` only knows the audited golden set. Candidates
-    waiting for audit are invisible to it, so without this the agent's second run would
-    happily draft from the same documents as its first, and the human would audit two
-    questions about one article. Rejected candidates stay excluded as well: a document
-    that already produced a bad question is a poor bet for the next one.
+    Returns (sources, all_used): the ids used as a question's source, and the ids used in
+    any role — source or relevant. Two sets because they guard two different things:
+
+    - `submit` rejects a candidate whose SOURCE is already a source. That is a correctness
+      rule: two questions drafted from one article are correlated and waste audit time.
+    - Sampling skips EVERY used document. That is a diversity rule: after trial-1, only
+      the source of the Burnley 30-April story was excluded, its other 18 articles kept
+      the story alive, and trial-2 drafted from it again. Sharing a relevant article is
+      normal, so this never rejects a candidate — it only stops steering back to it.
+
+    WHY CANDIDATES TOO: the golden set only knows audited items; without candidates, a
+    second run would re-draft from the first run's documents. Rejected candidates count
+    as well: a document that already produced a bad question is a poor bet for the next.
 
     A malformed candidate line fails loudly with file:line — the same rule as
-    `golden.load()`. A silently skipped line would quietly re-open its document.
+    `golden.load()`. A silently skipped line would quietly re-open its documents.
     """
-    from newsrag.eval.draft import used_source_ids
+    from newsrag.eval.golden import load
 
-    ids = used_source_ids()
+    sources: set[int] = set()
+    used: set[int] = set()
+
+    def add(source_doc_id, relevant_docs) -> None:
+        if source_doc_id is not None:
+            sources.add(source_doc_id)
+            used.add(source_doc_id)
+        used.update(d["doc_id"] for d in relevant_docs)
+
+    for it in load():
+        add(it.source_doc_id, it.relevant_docs)
     for path in sorted(CANDIDATES_DIR.glob("*.jsonl")):
         for n, line in enumerate(path.read_text().splitlines(), 1):
             if not line.strip():
                 continue
             try:
-                source = json.loads(line).get("source_doc_id")
+                record = json.loads(line)
             except json.JSONDecodeError as exc:
                 _fail([f"{path}:{n}: {exc}"])
-            if source is not None:
-                ids.add(source)
-    return ids
+            add(record.get("source_doc_id"), record.get("relevant_docs", []))
+    return sources, used
+
+
+def _excluded_ids() -> set[int]:
+    """Ids the sampling commands skip: every document already used, in any role."""
+    return _used_docs()[1]
 
 
 def _sample_docs(args: argparse.Namespace) -> int:
@@ -373,7 +395,9 @@ def _submit(args: argparse.Namespace) -> int:
     if not shape_errors:  # grounding needs well-formed evidence to even run
         errors += _check_grounding(conn, evidence)
 
-    if item.source_doc_id is not None and item.source_doc_id in _excluded_ids():
+    # Sources only: sharing a RELEVANT article with another question is normal and must
+    # not be rejected — see `_used_docs` for why the two rules differ.
+    if item.source_doc_id is not None and item.source_doc_id in _used_docs()[0]:
         errors.append(f"doc {item.source_doc_id} was already used as the source of another "
                       f"question or candidate — pick a different article")
 
