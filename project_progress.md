@@ -449,8 +449,12 @@ downstream choice.*
   - [x] **2.2.2c** Deterministic grounding check — every quote must occur in its doc body
         (`cli.py::_check_grounding`, 2026-10-19): existence only, after typographic
         normalisation; truth and support stay with the human auditor
-  - [ ] **2.2.2d** Review tool: candidate + evidence in context, approve/reject/edit,
-        append approved items to `golden_set.jsonl`, log the approve/edit/reject rates
+  - [x] **2.2.2d** Review tool: candidate + evidence in context, approve/reject/edit,
+        append approved items to `golden_set.jsonl`, log the approve/edit/reject rates —
+        `uv run review` (`eval/review.py`, 2026-10-21, written by Claude at the user's
+        request, in four parts). Tested on copies; **first real audit (the 4 pending
+        trial candidates) still to do**
+  - [ ] **2.2.2f** First real audit with `review`: the 4 trial candidates
   - [x] **2.2.2e** Pipeline vs agent → **agent** (user's decision, 2026-10-18): it uses
         the user's own tools (`sample_docs`, `sample_bundles`, `get_docs`, `validate`) and
         writes candidates, never `golden_set.jsonl` directly

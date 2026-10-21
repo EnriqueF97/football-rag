@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 corpus = "newsrag.corpus.cli:main"
 golden = "newsrag.eval.cli:main"
+review = "newsrag.eval.review:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -233,6 +233,37 @@ stories first.
 
 ---
 
+## 5c. Audit (`review` console script — humans only)
+
+Audits golden-set candidates into `data/golden/golden_set.jsonl`. **Deliberately not a
+`golden` subcommand**: the drafter agent may run `golden`, and must never approve its own
+work. It also **refuses to run without an interactive terminal**, so an agent or a pipe
+cannot drive it. Run it yourself, from the project root.
+
+```bash
+uv run review                     # every pending candidate
+uv run review --batch trial-2     # one batch
+uv run review --stats             # approve / edit / reject rates + club concentration (read-only)
+```
+
+Each candidate shows the question and answer, every evidence quote highlighted inside its
+paragraph, and the **articles of the same club ±4 days it does not annotate** — scan these
+for one that also answers. Keys:
+
+| Key | Does |
+|---|---|
+| `a` | approve as drafted → validated, next `qNNNN` id, appended to the golden set |
+| `e` | edit the candidate as JSON in `$VISUAL`/`$EDITOR` (default `nano`; for VS Code `EDITOR="code --wait"`), then validate and approve. An invalid edit reopens with the errors on top; empty the file to cancel. No evidence quote is needed for a document you add |
+| `r` | reject — a reason is required (it is the drafter's feedback) |
+| `f` | full text of the annotated docs, or of any ids you type (e.g. a not-annotated neighbour) |
+| `s` / `q` | skip / quit (Ctrl+C and Ctrl+D also quit) |
+
+Every decision is written when made, so quitting never loses one. Safe if interrupted
+mid-approval: a candidate whose source is already in the golden set is marked, not
+appended twice.
+
+---
+
 ## 6. Secrets
 
 ```bash
