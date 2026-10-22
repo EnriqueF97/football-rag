@@ -350,7 +350,8 @@ def sample_bundles(
 
 def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15,
                  contains: list[str] | None = None) -> list[dict]:
-    """Documents naming the same club(s) as `doc_id`, published within ±`days` of it.
+    """Documents naming the same club(s) as `doc_id` — or, for a club-less seed, sharing
+    its `contains` words — published within ±`days` of it.
 
     The agent's way to follow a thread: start from an article that looks promising and
     look around it — for the second half of a `multi_doc` answer, or for the outlet that
@@ -366,13 +367,18 @@ def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15,
       one headline named only Leeds and Luton — headline-club matching within ±4 days
       found 1 of the 5 other reports; ±400 days with contains=["unbeaten", "promotion"]
       finds all 5 among 33 results, the figure visible in each snippet.
+      If the seed's headline names no club (a pundit, a national team, a broadcaster),
+      the words alone define the thread — no club filter (added 2026-10-22, after
+      trial-4: the Lineker and Onana seeds returned nothing, so the agent could not
+      check its own annotation).
 
     KNOWN BIAS of the second mode, accepted on the record: matching words in the text is
     lexical search, and documents it finds become `relevant_docs` — tilting those items
     toward keyword retrieval (BM25), one of the systems under test (AGENTS §7). It is kept
     narrow on purpose (inside the seed's clubs, words the agent picks from a fact it has
     already read), and relevance pooling round 2, with dense retrieval, is what completes
-    what keyword matching misses.
+    what keyword matching misses. A club-less seed loses the club half of that narrowing,
+    so its words should be specific to the story — a surname, not "transfer".
 
     Args:
         conn:     open corpus DB connection.
@@ -386,7 +392,8 @@ def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15,
         [{"doc_id": 1204, "title": "...", "domain": "theguardian.com", "tier": "reliable",
           "published_at": "2024-10-25T...", "days_apart": 0,
           "snippet": "...only with contains..."}, ...]
-        An empty list when the seed's headline names no club — nothing to relate by.
+        An empty list when the seed's headline names no club and no `contains` words
+        are given — nothing to relate by.
 
     Raises:
         ValueError: the seed is not in the usable corpus. Raised, not an empty list: for
@@ -412,9 +419,9 @@ def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15,
     seed_title, seed_published = seed
 
     clubs = _clubs_in(seed_title)
-    if not clubs:
-        return []
     words = [w for w in (contains or []) if w.strip()]
+    if not clubs and not words:
+        return []
 
     # --- 2. Candidates in the time window ------------------------------------------
     # Dates — and, with `contains`, words — filtered in SQL (cheap); clubs filtered in
@@ -432,12 +439,14 @@ def related_docs(conn, doc_id: int, days: int = 4, limit: int = 15,
     # --- 3. Keep rows that share at least one club with the seed --------------------
     # `&` is set intersection; an empty intersection is falsy, so it is the condition.
     # With `contains`, the club may be named in the body: a report of a Burnley figure
-    # can sit under a headline about Leeds and Luton (doc 4058).
+    # can sit under a headline about Leeds and Luton (doc 4058). A club-less seed skips
+    # this step: its `contains` words are the only thread there is.
     related: list[dict] = []
     for rid, title, domain, tier, published_at, body in rows:
-        named = _clubs_in(title) | (_clubs_in(body) if words else set())
-        if not named & clubs:
-            continue
+        if clubs:
+            named = _clubs_in(title) | (_clubs_in(body) if words else set())
+            if not named & clubs:
+                continue
         doc = {
             "doc_id": rid, "title": title, "domain": domain, "tier": tier,
             "published_at": published_at,

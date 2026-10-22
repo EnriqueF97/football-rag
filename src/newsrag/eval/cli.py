@@ -183,7 +183,16 @@ def _related(args: argparse.Namespace) -> int:
                             contains=args.contains)
     except ValueError as exc:
         _fail([str(exc)])
-    return _emit({"seed": args.doc_id, "count": len(docs), "docs": docs})
+    out = {"seed": args.doc_id, "count": len(docs), "docs": docs}
+    # An empty result has two meanings; say which, or the agent reads "nothing on this
+    # story" where the truth is "nothing to relate by" (trial-4: Lineker, Onana).
+    if not docs and not args.contains:
+        from newsrag.eval.draft import _clubs_in, get_docs
+        if not _clubs_in(get_docs(_connect(), [args.doc_id])[0]["title"]):
+            out["note"] = ("the seed's headline names no club, so there is nothing to relate "
+                           "by club and date — use --contains with words specific to the "
+                           "story (a surname, not 'transfer')")
+    return _emit(out)
 
 
 def _get(args: argparse.Namespace) -> int:
