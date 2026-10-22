@@ -459,6 +459,12 @@ downstream choice.*
         and q0009 corrected by Claude at his request; `edited_by` added to the schema).
         Rates: 1 approved / 3 edited / 0 rejected — 75% edited. Audit fixes: warnings
         block unless confirmed; no double-counting; an unchanged edit counts as approved.
+  - [ ] **2.2.2g** `trial-3` (2026-10-21, seed 30): reviewed — contradictory weak (reject),
+        factual sound, multi_doc missing Guardian 10117. Prompt step added: account for every
+        same-story article. v1 archived unaudited (`data/candidates_archive/`);
+        re-run done 2026-10-22: step 4 worked; v1 restored as batch
+        `trial-3-v1`; same-batch overlap warning added to `submit`. All 6 audited
+        2026-10-22 (q0010–q0013 added; 2 rejected). Golden set: 13 items.
   - [x] **2.2.2e** Pipeline vs agent → **agent** (user's decision, 2026-10-18): it uses
         the user's own tools (`sample_docs`, `sample_bundles`, `get_docs`, `validate`) and
         writes candidates, never `golden_set.jsonl` directly

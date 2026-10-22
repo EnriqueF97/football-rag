@@ -405,6 +405,25 @@ def _submit(args: argparse.Namespace) -> int:
         errors.append(f"doc {item.source_doc_id} was already used as the source of another "
                       f"question or candidate — pick a different article")
 
+    # SAME-BATCH OVERLAP is a warning, not an error. Across batches, two questions sharing
+    # a relevant article is normal. Within one batch it almost always means the drafter
+    # stayed on the story it had just used: in trial-3's re-run two of three candidates
+    # were about Hilário and shared three documents, because sampling excludes a story only
+    # after each submit while `related` excludes nothing. Occasionally deliberate — hence
+    # overridable with --allow-warnings and a reason in notes, like every other warning.
+    path = CANDIDATES_DIR / f"{args.batch or date.today().isoformat()}.jsonl"
+    if path.exists():
+        mine = set(item.doc_ids())
+        for line in path.read_text().splitlines():
+            if not line.strip():
+                continue
+            other = json.loads(line)
+            shared = mine & {d["doc_id"] for d in other.get("relevant_docs", [])}
+            if shared:
+                report.warnings.append(
+                    f"shares relevant doc(s) {sorted(shared)} with candidate "
+                    f"{other['candidate_id']} in this batch — prefer a different story")
+
     if report.warnings and not args.allow_warnings:
         errors += [f"warning: {w}" for w in report.warnings]
         errors.append("warnings block a submission too: fix them and resubmit, or — only "
@@ -430,7 +449,6 @@ def _submit(args: argparse.Namespace) -> int:
         "warnings": report.warnings,      # only via --allow-warnings; the reason is in notes
     }
     CANDIDATES_DIR.mkdir(parents=True, exist_ok=True)
-    path = CANDIDATES_DIR / f"{args.batch or date.today().isoformat()}.jsonl"
     with path.open("a") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
